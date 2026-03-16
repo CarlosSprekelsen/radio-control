@@ -1,0 +1,3 @@
+[submodule "dts-common"]
+	path = dts-common
+	url = /home/carlossprekelsen/dts/dts-common
