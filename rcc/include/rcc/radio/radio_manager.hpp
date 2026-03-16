@@ -1,8 +1,8 @@
 #pragma once
 
 #include "rcc/adapter/radio_adapter.hpp"
-#include "rcc/config/config_manager.hpp"
 #include "rcc/common/types.hpp"
+#include "rcc/config/types.hpp"
 #include <asio/io_context.hpp>
 #include <mutex>
 #include <optional>
@@ -21,7 +21,7 @@ struct RadioDescriptor {
 
 class RadioManager {
 public:
-    RadioManager(asio::io_context& io, const config::Configuration& config);
+    RadioManager(asio::io_context& io, const config::Config& config);
 
     void start();
     void stop();
@@ -38,50 +38,7 @@ private:
     std::unordered_map<std::string, RadioDescriptor> radios_;
     std::optional<std::string> active_radio_;
 
-    void load_from_config(const config::Configuration& config);
+    void load_from_config(const config::Config& config);
 };
 
 }  // namespace rcc::radio
-
-#pragma once
-
-#include <string>
-#include <vector>
-
-namespace asio {
-class io_context;
-}
-
-namespace rcc::config {
-class ConfigManager;
-}  // namespace rcc::config
-
-namespace rcc::radio {
-
-struct RadioInfo {
-    std::string id;
-    std::string model;
-};
-
-class RadioManager {
-public:
-    RadioManager(asio::io_context& io, config::ConfigManager& config);
-    ~RadioManager();
-
-    void start();
-    void stop();
-
-    std::vector<RadioInfo> listRadios() const;
-    bool setActiveRadio(const std::string& radioId);
-    std::string activeRadio() const;
-
-private:
-    asio::io_context& io_;
-    config::ConfigManager& config_;
-    std::string activeRadio_{};
-    std::vector<RadioInfo> radios_;
-};
-
-}  // namespace rcc::radio
-
-

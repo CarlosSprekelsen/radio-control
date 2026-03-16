@@ -6,7 +6,6 @@
 
 namespace rcc::config {
 class ConfigManager;
-class ChannelMapper;
 }  // namespace rcc::config
 
 namespace rcc::radio {

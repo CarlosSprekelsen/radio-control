@@ -11,10 +11,12 @@ network:
   command_port: 8080
 
 telemetry:
-  sse_port: 8080
+  sse_port: 8081  # SSE streaming port (command_port+1 if 0)
   heartbeat_interval_sec: 30
   event_buffer_size: 512
   event_retention_hours: 24
+  max_sse_clients: 8
+  client_idle_timeout_sec: 60
 
 security:
   token_secret: "replace-me"

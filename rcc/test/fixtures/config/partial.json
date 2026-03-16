@@ -1,6 +1,0 @@
-{
-  "timing": {
-    "commandTimeoutSetPower": "15s",
-    "commandTimeoutSetChannel": "45s"
-  }
-}

@@ -1,10 +1,8 @@
 #pragma once
 
 #include "rcc/common/types.hpp"
-#include <dts/common/core/logging.hpp>
-#include <string>
-#include <string_view>
 #include <nlohmann/json.hpp>
+#include <string>
 
 namespace rcc::audit {
 
@@ -23,31 +21,3 @@ public:
 };
 
 }  // namespace rcc::audit
-
-#pragma once
-
-#include <chrono>
-#include <string>
-
-namespace rcc::audit {
-
-struct AuditRecord {
-    std::chrono::system_clock::time_point timestamp;
-    std::string actor;
-    std::string action;
-    std::string radioId;
-    std::string result;
-    std::string details;
-};
-
-class AuditLogger {
-public:
-    AuditLogger();
-    ~AuditLogger();
-
-    void record(const AuditRecord& record);
-};
-
-}  // namespace rcc::audit
-
-

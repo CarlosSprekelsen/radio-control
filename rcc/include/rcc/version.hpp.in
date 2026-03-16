@@ -1,6 +1,6 @@
 #pragma once
 
-#include <string>
+#include <string_view>
 
 namespace rcc {
 
@@ -17,15 +17,3 @@ inline std::string_view build_timestamp() noexcept {
 }
 
 }  // namespace rcc
-
-#pragma once
-
-#include <string_view>
-
-namespace rcc {
-inline constexpr std::string_view kVersion = "@PROJECT_VERSION@";
-inline constexpr std::string_view kGitVersion = "@RCC_GIT_VERSION@";
-inline constexpr std::string_view kBuildTimestamp = "@RCC_BUILD_TIME@";
-}  // namespace rcc
-
-

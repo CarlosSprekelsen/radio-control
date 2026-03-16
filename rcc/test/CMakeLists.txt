@@ -1,16 +1,54 @@
-if(NOT RCC_BUILD_TESTS)
-    return()
-endif()
+# Test infrastructure for radio-control-container
+# Mirrors the pattern used in gpsd-Container-proxy for a consistent DTS
+# learning curve across projects.
 
-add_executable(rcc-smoke-test smoke_test.cpp)
-target_link_libraries(rcc-smoke-test PRIVATE rcc-core Catch2::Catch2WithMain)
-target_include_directories(rcc-smoke-test PRIVATE ${PROJECT_SOURCE_DIR}/include ${PROJECT_BINARY_DIR}/generated)
-set_project_warnings(rcc-smoke-test)
-enable_sanitizers(rcc-smoke-test)
-enable_thread_sanitizer(rcc-smoke-test)
+# Support library (shared fakes + utilities)
+add_library(rcc-test-support STATIC
+    support/fake_radio_server.cpp
+    support/test_globals.cpp
+)
 
-add_test(NAME rcc-smoke COMMAND rcc-smoke-test)
+target_include_directories(rcc-test-support
+    PUBLIC
+        ${PROJECT_SOURCE_DIR}/include
+        ${PROJECT_BINARY_DIR}/generated
+        ${CMAKE_CURRENT_SOURCE_DIR}
+)
 
-message(STATUS "RCC tests scaffolding placeholder - tests will be added in subsequent tasks")
+target_link_libraries(rcc-test-support
+    PUBLIC
+        rcc-core
+        Threads::Threads
+)
 
+target_compile_definitions(rcc-test-support
+    PRIVATE DTS_INLINE_NAMESPACE=v1 ASIO_STANDALONE
+)
 
+# Unit tests
+file(GLOB_RECURSE UNIT_TEST_SOURCES "unit/*.cpp")
+
+foreach(test_file ${UNIT_TEST_SOURCES})
+    get_filename_component(test_name ${test_file} NAME_WE)
+    add_executable(${test_name} ${test_file})
+    target_link_libraries(${test_name}
+        PRIVATE rcc-core rcc-test-support GTest::gtest GTest::gtest_main Threads::Threads
+    )
+    target_compile_definitions(${test_name} PRIVATE DTS_INLINE_NAMESPACE=v1 ASIO_STANDALONE)
+    target_include_directories(${test_name} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+    add_test(NAME ${test_name} COMMAND ${test_name})
+endforeach()
+
+# Integration tests
+file(GLOB_RECURSE INTEGRATION_TEST_SOURCES "integration/*.cpp")
+
+foreach(test_file ${INTEGRATION_TEST_SOURCES})
+    get_filename_component(test_name ${test_file} NAME_WE)
+    add_executable(${test_name} ${test_file})
+    target_link_libraries(${test_name}
+        PRIVATE rcc-core rcc-test-support GTest::gtest GTest::gtest_main Threads::Threads
+    )
+    target_compile_definitions(${test_name} PRIVATE DTS_INLINE_NAMESPACE=v1 ASIO_STANDALONE)
+    target_include_directories(${test_name} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+    add_test(NAME ${test_name} COMMAND ${test_name})
+endforeach()

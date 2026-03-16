@@ -2,10 +2,11 @@
 
 #include "rcc/adapter/radio_adapter.hpp"
 #include <mutex>
+#include <string>
 
 namespace rcc::adapter {
 
-class SilvusAdapter : public IRadioAdapter {
+class SilvusAdapter final : public IRadioAdapter {
 public:
     SilvusAdapter(std::string id, std::string endpoint);
 
@@ -28,23 +29,3 @@ private:
 };
 
 }  // namespace rcc::adapter
-
-#pragma once
-
-#include "rcc/adapter/radio_adapter.hpp"
-
-namespace rcc::adapter {
-
-class SilvusAdapter : public RadioAdapter {
-public:
-    SilvusAdapter();
-    ~SilvusAdapter() override;
-
-    AdapterResponse connect() override;
-    AdapterResponse setPower(double watts) override;
-    AdapterResponse setChannel(int channelIndex) override;
-};
-
-}  // namespace rcc::adapter
-
-

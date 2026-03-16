@@ -1,9 +1,9 @@
 #pragma once
 
 #include "rcc/common/types.hpp"
-#include <string>
 #include <memory>
-#include <optional>
+#include <string>
+#include <utility>
 #include <vector>
 
 namespace rcc::adapter {
@@ -31,27 +31,3 @@ public:
 using AdapterPtr = std::shared_ptr<IRadioAdapter>;
 
 }  // namespace rcc::adapter
-
-#pragma once
-
-#include <string>
-
-namespace rcc::adapter {
-
-struct AdapterResponse {
-    bool success{false};
-    std::string message{};
-};
-
-class RadioAdapter {
-public:
-    virtual ~RadioAdapter() = default;
-
-    virtual AdapterResponse connect() = 0;
-    virtual AdapterResponse setPower(double watts) = 0;
-    virtual AdapterResponse setChannel(int channelIndex) = 0;
-};
-
-}  // namespace rcc::adapter
-
-

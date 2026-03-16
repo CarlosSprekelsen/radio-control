@@ -10,28 +10,28 @@ Authenticator::Authenticator(const config::SecurityConfig& config) {
     if (!config.token_secret.empty()) {
         validator_.emplace(config.token_secret);
     } else {
-        allow_unauthenticated_viewer_ = true;
+        allow_unauthenticated_viewer_  = true;
         allow_unauthenticated_control_ = true;
     }
 
-    // If roles not configured, default to allowing both
     if (allowed_roles_.empty()) {
         allow_unauthenticated_viewer_ = true;
     } else {
-        allow_unauthenticated_viewer_ = is_role_allowed("viewer");
+        allow_unauthenticated_viewer_  = is_role_allowed("viewer");
         allow_unauthenticated_control_ = is_role_allowed("controller");
     }
 }
 
-AuthResult Authenticator::authorize(const dts::common::rest::HttpRequest& request, AccessLevel level) const {
+AuthResult Authenticator::authorize(const dts::common::rest::HttpRequest& request,
+                                    AccessLevel level) const {
     if (!validator_) {
-        // No validator configured → rely on allow lists
         if (level == AccessLevel::Telemetry && allow_unauthenticated_viewer_) {
             return {.allowed = true, .subject = "anonymous"};
         }
         if (level == AccessLevel::Control && allow_unauthenticated_control_) {
             return {.allowed = true, .subject = "anonymous"};
         }
+        return {.allowed = false, .message = "Authentication required"};
     }
 
     auto authHeader = header_value(request, "authorization");
@@ -55,7 +55,8 @@ AuthResult Authenticator::authorize(const dts::common::rest::HttpRequest& reques
         return {.allowed = false, .message = "Insufficient scope"};
     }
 
-    std::string requiredRole = (level == AccessLevel::Telemetry) ? "viewer" : "controller";
+    std::string_view requiredRole =
+        (level == AccessLevel::Telemetry) ? "viewer" : "controller";
     if (!allowed_roles_.empty() && !is_role_allowed(requiredRole)) {
         return {.allowed = false, .message = "Role not permitted by configuration"};
     }
@@ -67,10 +68,12 @@ bool Authenticator::is_role_allowed(std::string_view role) const {
     if (allowed_roles_.empty()) {
         return true;
     }
-    return std::find(allowed_roles_.begin(), allowed_roles_.end(), role) != allowed_roles_.end();
+    return std::find(allowed_roles_.begin(), allowed_roles_.end(), role) !=
+           allowed_roles_.end();
 }
 
-std::string_view Authenticator::header_value(const dts::common::rest::HttpRequest& request, std::string_view key) {
+std::string_view Authenticator::header_value(
+    const dts::common::rest::HttpRequest& request, std::string_view key) {
     auto it = request.headers.find(std::string(key));
     if (it == request.headers.end()) {
         return {};
@@ -79,64 +82,3 @@ std::string_view Authenticator::header_value(const dts::common::rest::HttpReques
 }
 
 }  // namespace rcc::auth
-
-#include "rcc/auth/authenticator.hpp"
-
-namespace rcc::auth {
-
-namespace {
-
-Scope mapScope(dts::common::security::Scope scope) {
-    using dtsScope = dts::common::security::Scope;
-
-    switch (scope) {
-        case dtsScope::Admin:
-            return Scope::Admin;
-        case dtsScope::Operator:
-            return Scope::Controller;
-        case dtsScope::Viewer:
-        default:
-            return Scope::Viewer;
-    }
-}
-
-}  // namespace
-
-Authenticator::Authenticator(const config::SecurityConfig& security)
-    : validator_(security.token_secret) {}
-
-AuthResult Authenticator::validate(const std::string& authorizationHeader) const {
-    const auto info = validator_.validate(authorizationHeader);
-    AuthResult result;
-    result.granted = info.valid;
-    result.scope = mapScope(info.scope);
-    result.subject = info.subject;
-    return result;
-}
-
-}  // namespace rcc::auth
-
-#include "rcc/auth/authenticator.hpp"
-
-#include <algorithm>
-
-namespace rcc::auth {
-
-AuthContext Authenticator::authenticate(std::string_view token) const {
-    AuthContext ctx;
-    if (!token.empty()) {
-        ctx.valid = true;
-        ctx.subject = std::string{token};
-        ctx.scopes = {"radio:read"};
-    }
-    return ctx;
-}
-
-bool Authenticator::hasScope(const AuthContext& ctx, std::string_view scope) const {
-    return ctx.valid &&
-           std::find(ctx.scopes.begin(), ctx.scopes.end(), scope) != ctx.scopes.end();
-}
-
-}  // namespace rcc::auth
-
-

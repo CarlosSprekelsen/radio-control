@@ -1,6 +1,15 @@
 set(RCC_LIBRARY_SOURCES
-    core/application.cpp
+    adapter/radio_adapter.cpp
+    adapter/silvus_adapter.cpp
+    api/api_gateway.cpp
+    audit/audit_logger.cpp
+    auth/authenticator.cpp
+    command/orchestrator.cpp
     config/config_manager.cpp
+    core/application.cpp
+    core/types.cpp
+    radio/radio_manager.cpp
+    telemetry/telemetry_hub.cpp
 )
 
 add_library(rcc-core ${RCC_LIBRARY_SOURCES})
@@ -28,7 +37,6 @@ target_link_libraries(rcc-core
         OpenSSL::SSL
         OpenSSL::Crypto
         nlohmann_json::nlohmann_json
-        fmt::fmt
         ${YAMLCPP_LIBRARIES}
 )
 
@@ -40,13 +48,9 @@ if(RCC_ENABLE_LTO AND CMAKE_BUILD_TYPE STREQUAL "Release")
     set_target_properties(rcc-core PROPERTIES INTERPROCEDURAL_OPTIMIZATION TRUE)
 endif()
 
-add_executable(radio-control-container
-    core/main.cpp
-)
+add_executable(radio-control-container core/main.cpp)
+
 target_link_libraries(radio-control-container PRIVATE rcc-core)
-set_project_warnings(radio-control-container)
-enable_sanitizers(radio-control-container)
-enable_thread_sanitizer(radio-control-container)
 
 target_compile_definitions(radio-control-container
     PRIVATE
@@ -54,4 +58,6 @@ target_compile_definitions(radio-control-container
         ASIO_STANDALONE
 )
 
-
+set_project_warnings(radio-control-container)
+enable_sanitizers(radio-control-container)
+enable_thread_sanitizer(radio-control-container)
