@@ -1,4 +1,4 @@
-# Radio Control API – OpenAPI v1 (Human‑Readable)
+# Radio Control API – OpenAPI v1
 
 > **Scope**: Northbound API between the Android **Radio Control App** and the **Radio Control Container (RCC)**.
 > **Focus**: Minimal, stable contract for selecting a radio, setting **channel** and **power**, and receiving **telemetry**.
