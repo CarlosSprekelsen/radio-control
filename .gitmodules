@@ -1,4 +1,4 @@
 [submodule "dts-common"]
 	path = dts-common
-	url = https://github.com/CarlosSprekelsen/dts-common.git
+	url = ssh://git@bitbucket.katim.com:7999/dts/dts-common.git
 	fetchRecurseSubmodules = true
