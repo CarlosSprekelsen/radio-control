@@ -13,6 +13,9 @@ option(RCC_ENABLE_SANITIZERS "Enable Address/Undefined sanitizers (dev)"  OFF)
 option(RCC_ENABLE_TSAN     "Enable ThreadSanitizer (dev only)"            OFF)
 option(RCC_ENABLE_LTO      "Enable link-time optimization"                OFF)
 option(RCC_ENABLE_COVERAGE "Enable coverage instrumentation"              OFF)
+set(DTS_COMMON_DIR "" CACHE PATH "Legacy alias for DTS_COMMON_SOURCE_DIR")
+set(DTS_COMMON_SOURCE_DIR "" CACHE PATH "Path to dts-common source tree")
+set(DTS_COMMON_PACKAGE_DIR "" CACHE PATH "Path to dts-common install prefix")
 
 # CMake modules
 list(APPEND CMAKE_MODULE_PATH "${PROJECT_SOURCE_DIR}/cmake")
@@ -33,43 +36,68 @@ if(RCC_BUILD_TESTS)
 endif()
 
 # --------------------------------------------------------------------------
-# dts-common — git submodule at <repo-root>/dts-common
-# CMakeLists.txt lives one level above rcc/, so ../dts-common is correct.
+# dts-common — prefer the shared checkout at ../../dts-common, then fall back
+# to the embedded submodule at ../dts-common.
 # --------------------------------------------------------------------------
-set(DTS_COMMON_DIR "${PROJECT_SOURCE_DIR}/../dts-common"
-    CACHE PATH "Path to dts-common source tree (default: git submodule)")
+if(DTS_COMMON_DIR AND NOT DTS_COMMON_SOURCE_DIR)
+    set(DTS_COMMON_SOURCE_DIR "${DTS_COMMON_DIR}")
+endif()
 
-find_package(dts-common 1.0.0 QUIET CONFIG
-    PATHS "${DTS_COMMON_DIR}/build")
+set(_dts_common_source_dir "")
+if(DTS_COMMON_SOURCE_DIR)
+    file(TO_CMAKE_PATH "${DTS_COMMON_SOURCE_DIR}" _dts_common_source_dir)
+endif()
 
-if(NOT dts-common_FOUND)
-    # Auto-init the submodule if not yet populated
-    if(NOT EXISTS "${DTS_COMMON_DIR}/CMakeLists.txt")
-        find_package(Git QUIET)
-        if(Git_FOUND)
-            message(STATUS "Initialising dts-common git submodule…")
-            execute_process(
-                COMMAND ${GIT_EXECUTABLE} submodule update --init --recursive
-                WORKING_DIRECTORY "${PROJECT_SOURCE_DIR}/.."
-                RESULT_VARIABLE  _submod_result
-                OUTPUT_QUIET
-            )
-        endif()
-    endif()
+set(_dts_common_package_dir "")
+if(DTS_COMMON_PACKAGE_DIR)
+    file(TO_CMAKE_PATH "${DTS_COMMON_PACKAGE_DIR}" _dts_common_package_dir)
+    list(PREPEND CMAKE_PREFIX_PATH "${_dts_common_package_dir}")
+endif()
 
-    if(NOT EXISTS "${DTS_COMMON_DIR}/CMakeLists.txt")
+get_filename_component(_dts_common_shared_dir
+    "${PROJECT_SOURCE_DIR}/../../dts-common"
+    ABSOLUTE
+)
+file(TO_CMAKE_PATH "${_dts_common_shared_dir}" _dts_common_shared_dir)
+
+get_filename_component(_dts_common_submodule_dir
+    "${PROJECT_SOURCE_DIR}/../dts-common"
+    ABSOLUTE
+)
+file(TO_CMAKE_PATH "${_dts_common_submodule_dir}" _dts_common_submodule_dir)
+
+find_package(dts-common 1.0.0 QUIET CONFIG)
+
+if(dts-common_FOUND)
+    message(STATUS "dts-common: using installed package at ${dts-common_DIR}")
+elseif(_dts_common_source_dir)
+    if(NOT EXISTS "${_dts_common_source_dir}/CMakeLists.txt")
         message(FATAL_ERROR
-            "dts-common not found at ${DTS_COMMON_DIR}\n"
-            "Run:  git submodule update --init --recursive\n"
-            "Or override with:  -DDTS_COMMON_DIR=<path>")
+            "DTS_COMMON_SOURCE_DIR='${_dts_common_source_dir}' is invalid.\n"
+            "Expected a directory containing CMakeLists.txt")
     endif()
-
-    message(STATUS "dts-common: building from submodule at ${DTS_COMMON_DIR}")
-    add_subdirectory(${DTS_COMMON_DIR}
-                     ${CMAKE_BINARY_DIR}/dts-common
+    message(STATUS "dts-common: using explicit source dir ${_dts_common_source_dir}")
+    add_subdirectory("${_dts_common_source_dir}"
+                     "${CMAKE_BINARY_DIR}/dts-common"
+                     EXCLUDE_FROM_ALL)
+elseif(EXISTS "${_dts_common_shared_dir}/CMakeLists.txt")
+    message(STATUS "dts-common: using shared source dir ${_dts_common_shared_dir}")
+    add_subdirectory("${_dts_common_shared_dir}"
+                     "${CMAKE_BINARY_DIR}/dts-common"
+                     EXCLUDE_FROM_ALL)
+elseif(EXISTS "${_dts_common_submodule_dir}/CMakeLists.txt")
+    message(STATUS "dts-common: building from submodule at ${_dts_common_submodule_dir}")
+    add_subdirectory("${_dts_common_submodule_dir}"
+                     "${CMAKE_BINARY_DIR}/dts-common"
                      EXCLUDE_FROM_ALL)
 else()
-    message(STATUS "dts-common: using installed package at ${dts-common_DIR}")
+    message(FATAL_ERROR
+        "dts-common was not found.\n"
+        "Provide one of:\n"
+        "  -DDTS_COMMON_PACKAGE_DIR=/path/to/dts-common/install\n"
+        "  -DDTS_COMMON_SOURCE_DIR=/path/to/dts-common/source\n"
+        "Or initialize the submodule with:\n"
+        "  git submodule update --init --recursive")
 endif()
 
 # --------------------------------------------------------------------------

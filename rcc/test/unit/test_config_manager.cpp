@@ -85,6 +85,75 @@ security:
     EXPECT_EQ(cfg.telemetry.max_sse_clients, 8u);
 }
 
+TEST(ConfigManager, AcceptsSharedDtsCommonStyleKeys) {
+    const std::string yaml = R"yaml(
+container:
+  id: "shared-style"
+  deployment: "ci"
+network:
+  bindAddress: "127.0.0.1"
+  apiPort: 19090
+telemetry:
+  sse_port: 19091
+  heartbeatIntervalSec: 11
+  eventBufferSize: 128
+  eventRetentionHours: 2
+  maxConcurrentClients: 6
+  clientIdleTimeoutSec: 45
+security:
+  token_secret: "shared-secret"
+)yaml";
+    const auto path = writeTmpYaml(yaml);
+    rcc::config::ConfigManager mgr(path);
+    const auto& cfg = mgr.current();
+
+    EXPECT_EQ(cfg.network.bind_address, "127.0.0.1");
+    EXPECT_EQ(cfg.network.command_port, 19090);
+    EXPECT_EQ(cfg.telemetry.sse_port, 19091);
+    EXPECT_EQ(cfg.telemetry.heartbeat_interval, std::chrono::seconds{11});
+    EXPECT_EQ(cfg.telemetry.event_buffer_size, 128u);
+    EXPECT_EQ(cfg.telemetry.event_retention, std::chrono::hours{2});
+    EXPECT_EQ(cfg.telemetry.max_sse_clients, 6u);
+    EXPECT_EQ(cfg.telemetry.client_idle_timeout, std::chrono::seconds{45});
+}
+
+TEST(ConfigManager, LegacyKeysOverrideSharedAliasesAndPreserveHourUnits) {
+    const std::string yaml = R"yaml(
+container:
+  id: "legacy-wins"
+network:
+  bindAddress: "0.0.0.0"
+  apiPort: 18080
+  bind_address: "127.0.0.1"
+  command_port: 19090
+telemetry:
+  sse_port: 19091
+  heartbeatIntervalSec: 11
+  eventBufferSize: 32
+  eventRetentionHours: 6
+  maxConcurrentClients: 2
+  clientIdleTimeoutSec: 12
+  heartbeat_interval_sec: 13
+  event_buffer_size: 64
+  event_retention_hours: 1
+  max_sse_clients: 3
+  client_idle_timeout_sec: 14
+security:
+  token_secret: "shared-secret"
+)yaml";
+    const auto path = writeTmpYaml(yaml);
+    rcc::config::ConfigManager mgr(path);
+    const auto& cfg = mgr.current();
+
+    EXPECT_EQ(cfg.network.bind_address, "127.0.0.1");
+    EXPECT_EQ(cfg.network.command_port, 19090);
+    EXPECT_EQ(cfg.telemetry.heartbeat_interval, std::chrono::seconds{13});
+    EXPECT_EQ(cfg.telemetry.event_buffer_size, 64u);
+    EXPECT_EQ(cfg.telemetry.event_retention, std::chrono::hours{1});
+    EXPECT_EQ(cfg.telemetry.max_sse_clients, 3u);
+    EXPECT_EQ(cfg.telemetry.client_idle_timeout, std::chrono::seconds{14});
+}
+
 TEST(ConfigManager, ThrowsOnMissingFile) {
     EXPECT_THROW(
         rcc::config::ConfigManager mgr("/tmp/does_not_exist_rcc_xyzzy.yaml"),

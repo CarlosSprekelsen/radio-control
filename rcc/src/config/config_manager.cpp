@@ -1,95 +1,234 @@
 #include "rcc/config/config_manager.hpp"
 
-#include <yaml-cpp/yaml.h>
+#include <dts/common/config/sections.hpp>
+#include <dts/common/config/yaml.hpp>
+
 #include <stdexcept>
 
 namespace rcc::config {
 
 namespace {
 
+std::string joinPath(std::string_view parent, std::string_view key) {
+    if (parent.empty()) {
+        return std::string(key);
+    }
+    return std::string(parent) + "." + std::string(key);
+}
+
+template <typename T>
+std::optional<T> optionalScalar(const YAML::Node& node,
+                                std::string_view key,
+                                std::string_view parentPath) {
+    return dts::common::config::optionalScalar<T>(node[std::string(key)],
+                                                  joinPath(parentPath, key));
+}
+
 template <typename Duration>
-Duration parseDurationSeconds(const YAML::Node& node, const std::string& key, Duration fallback) {
-    if (!node[key]) {
+Duration readPositiveDurationSeconds(const YAML::Node& node,
+                                     std::string_view key,
+                                     Duration fallback,
+                                     std::string_view parentPath) {
+    return dts::common::config::readPositiveDurationSeconds(
+        node, key, fallback, parentPath);
+}
+
+std::chrono::hours readPositiveDurationHours(const YAML::Node& node,
+                                             std::string_view key,
+                                             std::chrono::hours fallback,
+                                             std::string_view parentPath) {
+    const auto child = node[std::string(key)];
+    if (!child) {
         return fallback;
     }
-    const auto seconds = node[key].as<int64_t>();
-    if (seconds <= 0) {
-        throw std::runtime_error("Duration for '" + key + "' must be positive");
+
+    const auto hours = dts::common::config::requiredScalar<int64_t>(
+        child, joinPath(parentPath, key));
+    if (hours <= 0) {
+        throw dts::common::config::ConfigError(
+            "Duration for '" + joinPath(parentPath, key) + "' must be positive");
     }
-    return std::chrono::duration_cast<Duration>(std::chrono::seconds{seconds});
+    return std::chrono::hours{hours};
+}
+
+ContainerInfo loadContainerInfo(const YAML::Node& node) {
+    ContainerInfo cfg;
+    if (const auto value = optionalScalar<std::string>(node, "id", "container")) {
+        cfg.container_id = *value;
+    }
+    if (const auto value =
+            optionalScalar<std::string>(node, "deployment", "container")) {
+        cfg.deployment = *value;
+    }
+    if (const auto value =
+            optionalScalar<std::string>(node, "soldier_id", "container")) {
+        cfg.soldier_id = *value;
+    }
+    return cfg;
+}
+
+NetworkConfig loadNetworkConfigCompat(const YAML::Node& node) {
+    NetworkConfig cfg;
+
+    dts::common::config::NetworkConfig defaults;
+    defaults.bindAddress = cfg.bind_address;
+    defaults.port = cfg.command_port;
+
+    const auto shared = dts::common::config::loadNetworkConfig(node, defaults);
+    cfg.bind_address = shared.bindAddress;
+    cfg.command_port = shared.port;
+
+    // Preserve the existing snake_case RCC config contract when both forms
+    // are present, while also accepting the shared dts-common key names.
+    if (const auto value =
+            optionalScalar<std::string>(node, "bind_address", "network")) {
+        cfg.bind_address = *value;
+    }
+    if (const auto value =
+            optionalScalar<uint16_t>(node, "command_port", "network")) {
+        cfg.command_port = *value;
+    }
+
+    return cfg;
+}
+
+TelemetryConfig loadTelemetryConfigCompat(const YAML::Node& node) {
+    TelemetryConfig cfg;
+
+    dts::common::config::TelemetryConfig defaults;
+    defaults.heartbeatIntervalSec =
+        static_cast<uint32_t>(cfg.heartbeat_interval.count());
+    defaults.eventBufferSize = static_cast<uint32_t>(cfg.event_buffer_size);
+    defaults.eventRetentionHours =
+        static_cast<uint32_t>(cfg.event_retention.count());
+    defaults.maxConcurrentClients =
+        static_cast<uint32_t>(cfg.max_sse_clients);
+    defaults.clientIdleTimeoutSec =
+        static_cast<uint32_t>(cfg.client_idle_timeout.count());
+
+    const auto shared = dts::common::config::loadTelemetryConfig(node, defaults);
+    cfg.heartbeat_interval = std::chrono::seconds(shared.heartbeatIntervalSec);
+    cfg.event_buffer_size = shared.eventBufferSize;
+    cfg.event_retention = std::chrono::hours(shared.eventRetentionHours);
+    cfg.max_sse_clients = shared.maxConcurrentClients;
+    cfg.client_idle_timeout = std::chrono::seconds(shared.clientIdleTimeoutSec);
+
+    if (const auto value =
+            optionalScalar<uint16_t>(node, "sse_port", "telemetry")) {
+        cfg.sse_port = *value;
+    }
+    if (node["heartbeat_interval_sec"]) {
+        cfg.heartbeat_interval = readPositiveDurationSeconds(
+            node, "heartbeat_interval_sec", cfg.heartbeat_interval, "telemetry");
+    }
+    if (const auto value =
+            optionalScalar<std::size_t>(node, "event_buffer_size", "telemetry")) {
+        cfg.event_buffer_size = *value;
+    }
+    if (node["event_retention_hours"]) {
+        cfg.event_retention = readPositiveDurationHours(
+            node, "event_retention_hours", cfg.event_retention, "telemetry");
+    }
+    if (const auto value =
+            optionalScalar<std::size_t>(node, "max_sse_clients", "telemetry")) {
+        cfg.max_sse_clients = *value;
+    }
+    if (node["client_idle_timeout_sec"]) {
+        cfg.client_idle_timeout = readPositiveDurationSeconds(
+            node, "client_idle_timeout_sec", cfg.client_idle_timeout, "telemetry");
+    }
+
+    return cfg;
+}
+
+SecurityConfig loadSecurityConfig(const YAML::Node& node) {
+    SecurityConfig cfg;
+
+    if (const auto value =
+            optionalScalar<std::string>(node, "token_secret", "security")) {
+        cfg.token_secret = *value;
+    }
+    if (const auto value = optionalScalar<std::vector<std::string>>(
+            node, "allowed_roles", "security")) {
+        cfg.allowed_roles = *value;
+    }
+    cfg.token_ttl = readPositiveDurationSeconds(
+        node, "token_ttl_sec", cfg.token_ttl, "security");
+
+    return cfg;
+}
+
+TimingProfile loadTimingProfile(const YAML::Node& node) {
+    TimingProfile cfg;
+
+    cfg.normal_probe = readPositiveDurationSeconds(
+        node, "normal_probe_sec", cfg.normal_probe, "timing");
+    cfg.recovering_probe = readPositiveDurationSeconds(
+        node, "recovering_probe_sec", cfg.recovering_probe, "timing");
+    cfg.offline_probe = readPositiveDurationSeconds(
+        node, "offline_probe_sec", cfg.offline_probe, "timing");
+
+    return cfg;
+}
+
+std::vector<RadioEntry> loadRadioEntries(const YAML::Node& node) {
+    std::vector<RadioEntry> radios;
+    if (!node) {
+        return radios;
+    }
+
+    for (const auto& entryNode : node) {
+        RadioEntry radio;
+        if (const auto value =
+                optionalScalar<std::string>(entryNode, "id", "radios[].id")) {
+            radio.id = *value;
+        }
+        if (const auto value = optionalScalar<std::string>(
+                entryNode, "adapter", "radios[].adapter")) {
+            radio.adapter = *value;
+        }
+        if (const auto value = optionalScalar<std::string>(
+                entryNode, "endpoint", "radios[].endpoint")) {
+            radio.endpoint = *value;
+        }
+        radio.description = dts::common::config::optionalString(
+            entryNode["description"], "radios[].description");
+
+        if (radio.id.empty() || radio.adapter.empty() || radio.endpoint.empty()) {
+            throw std::runtime_error(
+                "Radio entries require 'id', 'adapter', and 'endpoint'");
+        }
+
+        radios.emplace_back(std::move(radio));
+    }
+
+    return radios;
 }
 
 Config parseConfig(const YAML::Node& root) {
     Config cfg;
 
-    if (const auto container = root["container"]) {
-        cfg.container.container_id = container["id"].as<std::string>("");
-        cfg.container.deployment   = container["deployment"].as<std::string>("");
-        cfg.container.soldier_id   = container["soldier_id"].as<std::string>("");
-    } else {
-        throw std::runtime_error("Missing 'container' section");
-    }
+    const auto container =
+        dts::common::config::requireChild(root, "container");
+    cfg.container = loadContainerInfo(container);
 
     if (const auto network = root["network"]) {
-        cfg.network.bind_address = network["bind_address"].as<std::string>("0.0.0.0");
-        cfg.network.command_port =
-            static_cast<uint16_t>(network["command_port"].as<int>(8080));
+        cfg.network = loadNetworkConfigCompat(network);
     }
 
     if (const auto telemetry = root["telemetry"]) {
-        cfg.telemetry.sse_port =
-            static_cast<uint16_t>(telemetry["sse_port"].as<int>(0));
-        cfg.telemetry.heartbeat_interval = parseDurationSeconds<std::chrono::seconds>(
-            telemetry, "heartbeat_interval_sec", std::chrono::seconds{30});
-        cfg.telemetry.event_buffer_size =
-            telemetry["event_buffer_size"].as<std::size_t>(512);
-        cfg.telemetry.event_retention = parseDurationSeconds<std::chrono::hours>(
-            telemetry, "event_retention_hours", std::chrono::hours{24});
-        cfg.telemetry.max_sse_clients =
-            telemetry["max_sse_clients"].as<std::size_t>(8);
-        cfg.telemetry.client_idle_timeout = parseDurationSeconds<std::chrono::seconds>(
-            telemetry, "client_idle_timeout_sec", std::chrono::seconds{60});
+        cfg.telemetry = loadTelemetryConfigCompat(telemetry);
     }
 
-    if (const auto security = root["security"]) {
-        cfg.security.token_secret =
-            security["token_secret"].as<std::string>("");
-        cfg.security.allowed_roles =
-            security["allowed_roles"].as<std::vector<std::string>>(
-                std::vector<std::string>{});
-        cfg.security.token_ttl = parseDurationSeconds<std::chrono::seconds>(
-            security, "token_ttl_sec", std::chrono::seconds{300});
-    } else {
-        throw std::runtime_error("Missing 'security' section");
-    }
+    const auto security =
+        dts::common::config::requireChild(root, "security");
+    cfg.security = loadSecurityConfig(security);
 
     if (const auto timing = root["timing"]) {
-        cfg.timing.normal_probe = parseDurationSeconds<std::chrono::seconds>(
-            timing, "normal_probe_sec", std::chrono::seconds{30});
-        cfg.timing.recovering_probe = parseDurationSeconds<std::chrono::seconds>(
-            timing, "recovering_probe_sec", std::chrono::seconds{10});
-        cfg.timing.offline_probe = parseDurationSeconds<std::chrono::seconds>(
-            timing, "offline_probe_sec", std::chrono::seconds{60});
+        cfg.timing = loadTimingProfile(timing);
     }
 
-    if (const auto radios = root["radios"]) {
-        for (const auto& node : radios) {
-            RadioEntry radio;
-            radio.id       = node["id"].as<std::string>("");
-            radio.adapter  = node["adapter"].as<std::string>("");
-            radio.endpoint = node["endpoint"].as<std::string>("");
-            if (node["description"]) {
-                radio.description = node["description"].as<std::string>();
-            }
-
-            if (radio.id.empty() || radio.adapter.empty() || radio.endpoint.empty()) {
-                throw std::runtime_error(
-                    "Radio entries require 'id', 'adapter', and 'endpoint'");
-            }
-
-            cfg.radios.emplace_back(std::move(radio));
-        }
-    }
+    cfg.radios = loadRadioEntries(root["radios"]);
 
     return cfg;
 }
@@ -112,18 +251,7 @@ void ConfigManager::reload() {
 }
 
 Config ConfigManager::loadFromFile(const std::filesystem::path& path) const {
-    if (!std::filesystem::exists(path)) {
-        throw std::runtime_error(
-            "Configuration file not found: " + path.string());
-    }
-
-    YAML::Node root = YAML::LoadFile(path.string());
-    if (!root) {
-        throw std::runtime_error(
-            "Failed to parse configuration file: " + path.string());
-    }
-
-    return parseConfig(root);
+    return parseConfig(dts::common::config::YamlDocument::load(path).root());
 }
 
 }  // namespace rcc::config
