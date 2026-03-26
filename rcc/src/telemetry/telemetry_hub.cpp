@@ -37,7 +37,7 @@ public:
               cfg.telemetry.max_sse_clients,
               cfg.telemetry.client_idle_timeout,
               *rateLimiter_,
-              /*enableCors=*/false,
+              /*enableCors=*/true,
               /*expectedPath=*/"/api/v1/telemetry")} {}
 
     void start() {

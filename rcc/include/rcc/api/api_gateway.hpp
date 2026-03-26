@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstdint>
 #include <memory>
 
 namespace asio {
@@ -14,6 +15,10 @@ namespace rcc::command {
 class Orchestrator;
 }
 
+namespace rcc::radio {
+class RadioManager;
+}
+
 namespace rcc::telemetry {
 class TelemetryHub;
 }
@@ -25,7 +30,10 @@ public:
     ApiGateway(asio::io_context& io,
                auth::Authenticator& authenticator,
                command::Orchestrator& orchestrator,
-               telemetry::TelemetryHub& telemetry);
+               radio::RadioManager& radioManager,
+               telemetry::TelemetryHub& telemetry,
+               uint16_t restPort,
+               std::string tokenSecret);
     ~ApiGateway();
 
     ApiGateway(const ApiGateway&) = delete;
@@ -42,5 +50,3 @@ private:
 };
 
 }  // namespace rcc::api
-
-

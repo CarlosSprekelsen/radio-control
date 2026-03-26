@@ -73,7 +73,9 @@ void Application::initialize(int argc, char* argv[]) {
         *config_, *radioManager_, *telemetry_, *auditLogger_);
 
     apiGateway_ = std::make_unique<api::ApiGateway>(
-        *ioContext_, *authenticator_, *orchestrator_, *telemetry_);
+        *ioContext_, *authenticator_, *orchestrator_,
+        *radioManager_, *telemetry_, cfg.network.command_port,
+        cfg.security.token_secret);
 }
 
 void Application::start() {

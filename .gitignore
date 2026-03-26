@@ -1,0 +1,15 @@
+rcc/build/
+.claude/
+/build-*/
+*.log
+*.tmp
+*.bak
+*.swp
+*.swo
+*.DS_Store
+*.idea/
+*.vscode/
+*.env
+*.env.local
+*.env.development
+*.env.test  

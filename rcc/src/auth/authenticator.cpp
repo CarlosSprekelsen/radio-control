@@ -26,22 +26,22 @@ AuthResult Authenticator::authorize(const dts::common::rest::HttpRequest& reques
                                     AccessLevel level) const {
     if (!validator_) {
         if (level == AccessLevel::Telemetry && allow_unauthenticated_viewer_) {
-            return {.allowed = true, .subject = "anonymous"};
+            return {true, "anonymous", {}, {}};
         }
         if (level == AccessLevel::Control && allow_unauthenticated_control_) {
-            return {.allowed = true, .subject = "anonymous"};
+            return {true, "anonymous", {}, {}};
         }
-        return {.allowed = false, .message = "Authentication required"};
+        return {false, {}, "Authentication required", {}};
     }
 
     auto authHeader = header_value(request, "authorization");
     if (authHeader.empty()) {
-        return {.allowed = false, .message = "Missing Authorization header"};
+        return {false, {}, "Missing Authorization header", {}};
     }
 
     const auto info = validator_->validate(std::string(authHeader));
     if (!info.valid) {
-        return {.allowed = false, .message = "Invalid bearer token"};
+        return {false, {}, "Invalid bearer token", {}};
     }
 
     bool permitted = false;
@@ -52,16 +52,16 @@ AuthResult Authenticator::authorize(const dts::common::rest::HttpRequest& reques
     }
 
     if (!permitted) {
-        return {.allowed = false, .message = "Insufficient scope"};
+        return {false, {}, "Insufficient scope", {}};
     }
 
     std::string_view requiredRole =
         (level == AccessLevel::Telemetry) ? "viewer" : "controller";
     if (!allowed_roles_.empty() && !is_role_allowed(requiredRole)) {
-        return {.allowed = false, .message = "Role not permitted by configuration"};
+        return {false, {}, "Role not permitted by configuration", {}};
     }
 
-    return {.allowed = true, .subject = info.subject, .scope = info.scope};
+    return {true, info.subject, {}, info.scope};
 }
 
 bool Authenticator::is_role_allowed(std::string_view role) const {

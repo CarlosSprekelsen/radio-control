@@ -21,6 +21,22 @@
 
 namespace {
 
+// Poll until a TCP connect to 127.0.0.1:port succeeds or timeout expires.
+bool wait_for_port(uint16_t port,
+                   std::chrono::milliseconds timeout = std::chrono::milliseconds{2000}) {
+    return rcc::test::wait_for([port] {
+        int tfd = ::socket(AF_INET, SOCK_STREAM, 0);
+        if (tfd < 0) return false;
+        sockaddr_in addr{};
+        addr.sin_family      = AF_INET;
+        addr.sin_port        = htons(port);
+        addr.sin_addr.s_addr = inet_addr("127.0.0.1");
+        bool ok = ::connect(tfd, reinterpret_cast<sockaddr*>(&addr), sizeof(addr)) == 0;
+        ::close(tfd);
+        return ok;
+    }, timeout);
+}
+
 rcc::config::Config makeTestConfig(uint16_t sse_port) {
     rcc::config::Config cfg;
     cfg.container.container_id = "test-rcc";
@@ -32,7 +48,7 @@ rcc::config::Config makeTestConfig(uint16_t sse_port) {
     cfg.telemetry.event_retention      = std::chrono::hours{1};
     cfg.telemetry.max_sse_clients      = 4;
     cfg.telemetry.client_idle_timeout  = std::chrono::seconds{10};
-    cfg.security.token_secret          = "";  // no auth for test
+    cfg.security.token_secret          = "test-secret-key-16bytes";
     return cfg;
 }
 
@@ -67,9 +83,8 @@ TEST(TelemetrySSE, ServerStartsAndAcceptsConnection) {
     rcc::telemetry::TelemetryHub hub(io, cfg);
     hub.start();
 
-    // Give the SSE server a moment to bind
-    ASSERT_TRUE(rcc::test::wait_for([&] { return true; },
-                std::chrono::milliseconds{200}));
+    // Wait until the SSE server is actually accepting connections
+    ASSERT_TRUE(wait_for_port(port)) << "SSE server did not start within 2s";
 
     // Connect a raw TCP client
     int fd = ::socket(AF_INET, SOCK_STREAM, 0);
@@ -84,10 +99,12 @@ TEST(TelemetrySSE, ServerStartsAndAcceptsConnection) {
         << "Could not connect to SSE server on port " << port;
 
     // Send a minimal SSE GET request
+    const std::string jwt = rcc::test::createTestJWT("viewer");
     const std::string req =
         "GET /api/v1/telemetry HTTP/1.1\r\n"
         "Host: 127.0.0.1\r\n"
         "Accept: text/event-stream\r\n"
+        "Authorization: Bearer " + jwt + "\r\n"
         "Connection: keep-alive\r\n\r\n";
     ::send(fd, req.data(), req.size(), MSG_NOSIGNAL);
 
@@ -117,7 +134,8 @@ TEST(TelemetrySSE, PublishEventReachesClient) {
     rcc::telemetry::TelemetryHub hub(io, cfg);
     hub.start();
 
-    std::this_thread::sleep_for(std::chrono::milliseconds{100});
+    // Wait until the SSE server is actually accepting connections
+    ASSERT_TRUE(wait_for_port(port)) << "SSE server did not start within 2s";
 
     // Connect and send request
     int fd = ::socket(AF_INET, SOCK_STREAM, 0);
@@ -128,9 +146,12 @@ TEST(TelemetrySSE, PublishEventReachesClient) {
     addr.sin_addr.s_addr = inet_addr("127.0.0.1");
     ASSERT_EQ(::connect(fd, reinterpret_cast<sockaddr*>(&addr), sizeof(addr)), 0);
 
+    const std::string jwt2 = rcc::test::createTestJWT("viewer");
     const std::string req =
         "GET /api/v1/telemetry HTTP/1.1\r\nHost: 127.0.0.1\r\n"
-        "Accept: text/event-stream\r\nConnection: keep-alive\r\n\r\n";
+        "Accept: text/event-stream\r\n"
+        "Authorization: Bearer " + jwt2 + "\r\n"
+        "Connection: keep-alive\r\n\r\n";
     ::send(fd, req.data(), req.size(), MSG_NOSIGNAL);
 
     // Give server time to accept

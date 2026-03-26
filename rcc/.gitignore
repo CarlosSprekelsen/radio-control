@@ -1,0 +1,14 @@
+/build*/
+/target*/
+/dist*/
+/node_modules/
+config/test.yaml
+*.log
+*.tmp
+*.bak
+*.swp
+.DS_Store
+.idea/
+.vscode/
+*.iml
+*.sln
