@@ -4,8 +4,8 @@
 
 namespace rcc::radio {
 
-RadioManager::RadioManager(asio::io_context& io, const config::Config& config)
-    : io_(io) {
+RadioManager::RadioManager([[maybe_unused]] asio::io_context& io,
+                           const config::Config& config) {
     load_from_config(config);
 }
 
