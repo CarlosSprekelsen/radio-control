@@ -167,10 +167,35 @@ private:
                                {"note", "dev/test token — not for production"}});
             });
 
-        // Health — no auth
-        router.addRoute("/api/v1/health", [](const dts::common::rest::HttpRequest& req) {
+        // Health — no auth, reflects actual radio subsystem state
+        router.addRoute("/api/v1/health", [this](const dts::common::rest::HttpRequest& req) {
             if (req.method != "GET") return errJson(405, "Method Not Allowed", "Use GET");
-            return okJson({{"status", "ready"}});
+
+            const auto radios = radioManager_.list_radios();
+            const auto activeId = radioManager_.active_radio();
+
+            // Determine overall status from radio states
+            std::string status = "ready";
+            bool anyReady = false;
+            bool allOffline = true;
+            for (const auto& desc : radios) {
+                const auto st = desc.adapter ? desc.adapter->state() : desc.state;
+                if (st.status != common::RadioStatus::Offline) allOffline = false;
+                if (st.status == common::RadioStatus::Ready) anyReady = true;
+            }
+            if (radios.empty()) {
+                status = "degraded";
+            } else if (allOffline) {
+                status = "degraded";
+            } else if (!anyReady) {
+                status = "initializing";
+            }
+
+            nlohmann::json body;
+            body["status"] = status;
+            body["radioCount"] = radios.size();
+            if (activeId.has_value()) body["activeRadio"] = *activeId;
+            return okJson(body);
         });
 
         // GET /api/v1/radios — viewer level
