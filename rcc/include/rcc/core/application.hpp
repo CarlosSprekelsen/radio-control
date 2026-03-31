@@ -3,8 +3,8 @@
 #include <memory>
 #include <string>
 
-namespace asio {
-class io_context;
+namespace dts::common::core {
+class ServiceRunner;
 }
 
 namespace rcc::api {
@@ -54,7 +54,7 @@ private:
     void start();
     void stop();
 
-    std::unique_ptr<asio::io_context> ioContext_;
+    std::unique_ptr<dts::common::core::ServiceRunner> runner_;
     std::unique_ptr<config::ConfigManager> config_;
     std::unique_ptr<auth::Authenticator> authenticator_;
     std::unique_ptr<telemetry::TelemetryHub> telemetry_;
