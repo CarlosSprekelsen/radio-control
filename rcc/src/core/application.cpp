@@ -10,6 +10,7 @@
 #include "rcc/version.hpp"
 
 #include <asio/io_context.hpp>
+#include <asio/executor_work_guard.hpp>
 #include <csignal>
 #include <iostream>
 
@@ -47,9 +48,15 @@ int Application::run(int argc, char* argv[]) {
 
     start();
 
+    // Prevent io_context::run() from returning prematurely if all async work
+    // momentarily drains.  Released before stop() in the shutdown path.
+    auto workGuard = asio::make_work_guard(*ioContext_);
+
     g_io_context.store(ioContext_.get());
     ioContext_->run();
     g_io_context.store(nullptr);
+
+    workGuard.reset();
 
     stop();
     return 0;
