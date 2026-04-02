@@ -159,6 +159,10 @@ constexpr std::string_view RADIO_MONITOR_HTML = R"html(
       margin-bottom: 10px;
     }
 
+    .service-identity {
+      margin-bottom: 14px;
+    }
+
     .status-grid {
       display: grid;
       grid-template-columns: repeat(2, 1fr);
@@ -208,6 +212,15 @@ constexpr std::string_view RADIO_MONITOR_HTML = R"html(
 <div class="brand-header">
   <img class="brand-logo" src="data:image/svg+xml;base64,PHN2ZyB2ZXJzaW9uPSIxLjIiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyIgdmlld0JveD0iMCAwIDYyNSAxNzAiPgo8cGF0aCBmaWxsPSIjRTk0QTI2IiBjbGFzcz0iYSIgZD0ibTYyNC4zIDAuOHYyNS45aC04OC44di0yNS45eiIvPgo8cGF0aCBmaWxsPSIjNEI1MDU1IiBjbGFzcz0iYiIgZD0ibTQ1LjIgMTI3LjVsLTEyLjMgMTMuMnYyOS4yaC0zMi43di0xMTYuN2gzMi43djQ4LjVsNDUuMi00OC41aDM2LjNsLTQ3LjcgNTEuNyA1MC4yIDY1aC0zOC4zeiIvPgo8cGF0aCBmaWxsPSIjNEI1MDU1IiBmaWxsLXJ1bGU9ImV2ZW5vZGQiIGNsYXNzPSJiIiBkPSJtMjE3LjQgMTQ3LjNoLTQ5LjRsLTkuMSAyMi42aC0zMy43bDUxLjUtMTE2LjFoMzIuNWw1MS43IDExNi4xaC0zNC40em0tOS42LTI0LjJsLTE1LTM3LjItMTUgMzcuMnoiLz4KPHBhdGggZmlsbD0iIzRCNTA1NSIgY2xhc3M9ImIiIGQ9Im0yODYuOCA3OS40aC0zNS45di0yNi4yaDEwNC42djI2LjJoLTM1Ljd2OTAuNWgtMzN6Ii8+CjxwYXRoIGZpbGw9IiM0QjUwNTUiIGNsYXNzPSJiIiBkPSJtMzc2LjEgNTMuMmgzM3YxMTYuN2gtMzN6Ii8+CjxwYXRoIGZpbGw9IiM0QjUwNTUiIGNsYXNzPSJiIiBkPSJtNTQ2LjMgMTY5LjlsLTAuMy02MS45LTMwIDUwLjRoLTE0LjdsLTI5LjgtNDguN3Y2MC4yaC0zMC41di0xMTYuN2gyNy4ybDQxIDY3LjMgNDAtNjcuM2gyNy4xbDAuNCAxMTYuN3oiLz4KPC9zdmc+Cg==" alt="KATIM logo" />
   <h1>Radio Control Console</h1>
+</div>
+
+<div class="card service-identity">
+  <div class="status-grid">
+    <div><span class="label">Service:</span> <span id="serviceName" class="value">Loading...</span></div>
+    <div><span class="label">Version:</span> <span id="serviceVersion" class="value">Loading...</span></div>
+    <div><span class="label">Git Version:</span> <span id="serviceGitVersion" class="value">Loading...</span></div>
+    <div><span class="label">Build Date:</span> <span id="serviceBuildDate" class="value">Loading...</span></div>
+  </div>
 </div>
 
 <div class="tabs">
@@ -308,6 +321,27 @@ constexpr std::string_view RADIO_MONITOR_HTML = R"html(
 const API_BASE = "/api/v1";
 let globalToken = "";
 let radiosCache = [];
+
+function updateServiceIdentity(identity) {
+  document.getElementById("serviceName").textContent = identity?.service ?? "Unknown";
+  document.getElementById("serviceVersion").textContent = identity?.version ?? "-";
+  document.getElementById("serviceGitVersion").textContent = identity?.gitVersion ?? "-";
+  document.getElementById("serviceBuildDate").textContent = identity?.buildDate ?? "-";
+}
+
+async function loadServiceIdentity() {
+  try {
+    const res = await fetch(API_BASE + "/health");
+    const json = await res.json();
+    if (json.result !== "ok" || !json.data) {
+      throw new Error(json.message ?? "unexpected response");
+    }
+    updateServiceIdentity(json.data);
+  } catch (e) {
+    document.getElementById("serviceBuildDate").textContent = "Unavailable";
+    radioLog("Service identity unavailable: " + e.message, "warn");
+  }
+}
 
 function apiHeaders(includeBody = false) {
   const h = {};
@@ -708,6 +742,7 @@ async function fetchDevToken() {
 }
 
 async function init() {
+  await loadServiceIdentity();
   await fetchDevToken();
   await loadRadios();
 }

@@ -1,5 +1,6 @@
 #include "rcc/api/api_gateway.hpp"
 #include "rcc/api/monitor_page.hpp"
+#include "rcc/version.hpp"
 
 #include "rcc/auth/authenticator.hpp"
 #include "rcc/command/orchestrator.hpp"
@@ -194,6 +195,10 @@ private:
             nlohmann::json body;
             body["status"] = status;
             body["radioCount"] = radios.size();
+            body["service"] = "radio-control-container";
+            body["version"] = std::string(rcc::version());
+            body["gitVersion"] = std::string(rcc::git_revision());
+            body["buildDate"] = std::string(rcc::build_timestamp());
             if (activeId.has_value()) body["activeRadio"] = *activeId;
             return okJson(body);
         });
