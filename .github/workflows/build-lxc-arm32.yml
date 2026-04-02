@@ -31,36 +31,31 @@ jobs:
           --volume "${{ github.workspace }}:/workspace"
         install: |
           apt-get update
-          apt-get install -y build-essential curl git pkg-config
-          apt-get install -y golang || true
+          apt-get install -y build-essential cmake git pkg-config file \
+            libssl-dev libyaml-cpp-dev nlohmann-json3-dev libfmt-dev libasio-dev
         run: |
           cd /workspace/rcc
-          go mod download
-          CGO_ENABLED=0 GOOS=linux GOARCH=arm go build -o /workspace/rcc/rcc ./cmd/rcc
-          file /workspace/rcc/rcc
+          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DRCC_BUILD_TESTS=OFF
+          cmake --build build --parallel
+          file build/src/radio-control-container || file build/radio-control-container
 
     - name: Verify arm32 binary
       run: |
-        if [ ! -f ./rcc/rcc ]; then
-          echo "ERROR: RCC binary not found"
+        BINARY=$(find ./rcc/build -type f -name radio-control-container | head -1)
+        if [ -z "$BINARY" ]; then
+          echo "ERROR: radio-control-container binary not found"
           exit 1
         fi
         echo "Binary metadata:"
-        file ./rcc/rcc
-        readelf -h ./rcc/rcc | grep Machine || true
+        file "$BINARY"
+        readelf -h "$BINARY" | grep Machine || true
         sudo apt-get update
         sudo apt-get install -y qemu-user-static || echo "QEMU install skipped"
-        qemu-arm-static ./rcc/rcc --help || echo "Binary executed under qemu"
+        qemu-arm-static "$BINARY" ./rcc/config/default.yaml || echo "Binary executed under qemu"
 
-    - name: Prepare config assets
+    - name: Verify config assets
       run: |
-        mkdir -p config
-        cat > config/rcc.config.json <<'JSON'
-{
-  "heartbeatInterval": "30s",
-  "heartbeatTimeout": "90s"
-}
-JSON
+        test -f ./rcc/config/default.yaml
 
     - name: Build arm32 LXC container
       continue-on-error: true
@@ -93,5 +88,4 @@ JSON
     - name: Clean workspace
       if: always()
       run: |
-        rm -f ./rcc/rcc
-        rm -f config/rcc.config.json
+        rm -rf ./rcc/build
