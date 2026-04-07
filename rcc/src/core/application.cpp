@@ -11,6 +11,8 @@
 
 #include "dts/common/core/service_runner.hpp"
 
+#include <chrono>
+#include <functional>
 #include <iostream>
 
 namespace rcc::core {
@@ -64,15 +66,44 @@ void Application::start() {
     radioManager_->start();
     apiGateway_->start();
 
-    const auto& cfg = config_->current();
-    telemetry_->publishReady(cfg.container.container_id, cfg.container.deployment);
+    auto readinessTimer = std::make_shared<asio::steady_timer>(runner_->io());
+    auto readinessCheck = std::make_shared<std::function<void()>>();
+    const auto deadline =
+        std::chrono::steady_clock::now() + std::chrono::seconds(2);
 
-    std::cout << "Listening on port " << cfg.network.command_port
-              << " (SSE on port "
-              << (cfg.telemetry.sse_port > 0
-                      ? cfg.telemetry.sse_port
-                      : static_cast<uint16_t>(cfg.network.command_port + 1))
-              << ")\n";
+    *readinessCheck = [this, readinessTimer, readinessCheck, deadline]() {
+        if (telemetry_->awaitListening(std::chrono::milliseconds(0)) &&
+            apiGateway_->awaitListening(std::chrono::milliseconds(0))) {
+            const auto& cfg = config_->current();
+            telemetry_->publishReady(cfg.container.container_id,
+                                     cfg.container.deployment);
+            std::cout << "Listening on port " << cfg.network.command_port
+                      << " (SSE on port "
+                      << (cfg.telemetry.sse_port > 0
+                              ? cfg.telemetry.sse_port
+                              : static_cast<uint16_t>(cfg.network.command_port + 1))
+                      << ")\n";
+            return;
+        }
+
+        if (std::chrono::steady_clock::now() >= deadline) {
+            std::cerr << "radio-control listeners failed to become ready"
+                      << std::endl;
+            runner_->requestStop();
+            return;
+        }
+
+        readinessTimer->expires_after(std::chrono::milliseconds(50));
+        readinessTimer->async_wait(
+            [readinessCheck, readinessTimer](const asio::error_code& ec) {
+                if (ec) {
+                    return;
+                }
+                (*readinessCheck)();
+            });
+    };
+
+    asio::post(runner_->io(), [readinessCheck]() { (*readinessCheck)(); });
 }
 
 void Application::stop() {

@@ -139,6 +139,10 @@ public:
         std::cout << "[ApiGateway] REST server stopped" << std::endl;
     }
 
+    bool awaitListening(std::chrono::milliseconds timeout) {
+        return restServer_->awaitListening(timeout);
+    }
+
 private:
     uint16_t restPort() const { return restServer_->port(); }
 
@@ -356,5 +360,8 @@ ApiGateway::ApiGateway(asio::io_context& io,
 ApiGateway::~ApiGateway() = default;
 void ApiGateway::start() { impl_->start(); }
 void ApiGateway::stop()  { impl_->stop(); }
+bool ApiGateway::awaitListening(std::chrono::milliseconds timeout) {
+    return impl_->awaitListening(timeout);
+}
 
 }  // namespace rcc::api
