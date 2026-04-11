@@ -25,6 +25,14 @@ security:
     - controller
   token_ttl_sec: 300
 
+serviceDiscovery:
+  enabled: true
+  port: 9999
+  ttl: 60
+  startupBurstCount: 1
+  startupBurstSpacingMs: 1000
+  bindAddress: "0.0.0.0"
+
 timing:
   normal_probe_sec: 30
   recovering_probe_sec: 10

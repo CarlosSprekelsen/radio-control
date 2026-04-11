@@ -1,11 +1,10 @@
 #pragma once
 
+#include "dts/common/core/service_runner.hpp"
+#include "dts/common/discovery/discovery.hpp"
+
 #include <memory>
 #include <string>
-
-namespace dts::common::core {
-class ServiceRunner;
-}
 
 namespace rcc::api {
 class ApiGateway;
@@ -54,7 +53,7 @@ private:
     void start();
     void stop();
 
-    std::unique_ptr<dts::common::core::ServiceRunner> runner_;
+    std::unique_ptr<::dts::common::core::ServiceRunner> runner_;
     std::unique_ptr<config::ConfigManager> config_;
     std::unique_ptr<auth::Authenticator> authenticator_;
     std::unique_ptr<telemetry::TelemetryHub> telemetry_;
@@ -62,6 +61,7 @@ private:
     std::unique_ptr<radio::RadioManager> radioManager_;
     std::unique_ptr<command::Orchestrator> orchestrator_;
     std::unique_ptr<api::ApiGateway> apiGateway_;
+    std::unique_ptr<::dts::common::discovery::DiscoveryResponder> discoveryResponder_;
 
     std::string configPath_;
 };

@@ -205,6 +205,34 @@ std::vector<RadioEntry> loadRadioEntries(const YAML::Node& node) {
     return radios;
 }
 
+ServiceDiscoveryConfig loadServiceDiscoveryConfig(const YAML::Node& node) {
+    ServiceDiscoveryConfig cfg;
+    if (!node) {
+        return cfg;
+    }
+    if (const auto v = optionalScalar<bool>(node, "enabled", "serviceDiscovery")) {
+        cfg.enabled = *v;
+    }
+    if (const auto v = optionalScalar<uint16_t>(node, "port", "serviceDiscovery")) {
+        cfg.port = *v;
+    }
+    if (const auto v = optionalScalar<int>(node, "ttl", "serviceDiscovery")) {
+        cfg.ttl = *v;
+    }
+    if (const auto v = optionalScalar<int>(node, "startupBurstCount", "serviceDiscovery")) {
+        cfg.startup_burst_count = *v;
+    }
+    if (const auto v = optionalScalar<int>(node, "startupBurstSpacingMs", "serviceDiscovery")) {
+        cfg.startup_burst_spacing_ms = *v;
+    }
+    if (const auto v = optionalScalar<std::string>(node, "bindAddress", "serviceDiscovery")) {
+        cfg.bind_address = *v;
+    }
+    cfg.interface_hint = dts::common::config::optionalString(
+        node["interfaceHint"], "serviceDiscovery.interfaceHint");
+    return cfg;
+}
+
 Config parseConfig(const YAML::Node& root) {
     Config cfg;
 
@@ -223,6 +251,9 @@ Config parseConfig(const YAML::Node& root) {
     const auto security =
         dts::common::config::requireChild(root, "security");
     cfg.security = loadSecurityConfig(security);
+
+    cfg.service_discovery =
+        loadServiceDiscoveryConfig(root["serviceDiscovery"]);
 
     if (const auto timing = root["timing"]) {
         cfg.timing = loadTimingProfile(timing);

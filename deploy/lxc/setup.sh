@@ -222,6 +222,53 @@ set -eu
 LOG_FILE="/var/log/rcc/radio-control-container.log"
 mkdir -p /var/log/rcc
 
+# Detect first non-lo interface
+INTERFACE=""
+for iface in /sys/class/net/*; do
+    name="$(basename "$iface")"
+    [ "$name" = "lo" ] && continue
+    INTERFACE="$name"
+    break
+done
+if [ -z "$INTERFACE" ]; then
+    echo "$(date): FATAL - no network interface found" >> "$LOG_FILE"
+    exit 1
+fi
+
+# --- Unified network readiness loop (Issue #42) ---
+STATIC_IP_CIDR="${STATIC_IP:-192.168.101.36/24}"
+STATIC_GW="${STATIC_GATEWAY:-192.168.101.100}"
+NET_TIMEOUT=90
+NET_ELAPSED=0
+NET_READY=false
+
+echo "$(date): Configuring network (iface=$INTERFACE ip=$STATIC_IP_CIDR gw=$STATIC_GW timeout=${NET_TIMEOUT}s)..." >> "$LOG_FILE"
+
+while [ "$NET_ELAPSED" -lt "$NET_TIMEOUT" ]; do
+    ip link set "$INTERFACE" up 2>/dev/null || true
+
+    if ! ip addr show "$INTERFACE" 2>/dev/null | grep -q "inet ${STATIC_IP_CIDR%/*}/"; then
+        ip addr add "$STATIC_IP_CIDR" dev "$INTERFACE" 2>/dev/null || true
+    fi
+
+    if ! ip route show default 2>/dev/null | grep -q "via $STATIC_GW"; then
+        ip route replace default via "$STATIC_GW" dev "$INTERFACE" 2>/dev/null || true
+    fi
+
+    if ping -c1 -W1 "$STATIC_GW" >/dev/null 2>&1; then
+        NET_READY=true
+        echo "$(date): Network ready after ${NET_ELAPSED}s" >> "$LOG_FILE"
+        break
+    fi
+
+    NET_ELAPSED=$((NET_ELAPSED + 1))
+    sleep 1
+done
+
+if [ "$NET_READY" = "false" ]; then
+    echo "$(date): WARNING - Network not ready after ${NET_TIMEOUT}s, starting service anyway" >> "$LOG_FILE"
+fi
+
 (
   while true; do
     /usr/local/bin/radio-control-container /etc/rcc/config.yaml >>"$LOG_FILE" 2>&1 || true

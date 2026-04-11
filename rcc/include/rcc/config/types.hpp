@@ -47,11 +47,22 @@ struct ContainerInfo {
     std::string soldier_id;
 };
 
+struct ServiceDiscoveryConfig {
+    bool enabled{true};
+    uint16_t port{9999};
+    int ttl{60};
+    int startup_burst_count{1};
+    int startup_burst_spacing_ms{1000};
+    std::string bind_address{"0.0.0.0"};
+    std::optional<std::string> interface_hint;
+};
+
 struct Config {
     ContainerInfo container;
     NetworkConfig network;
     TelemetryConfig telemetry;
     SecurityConfig security;
+    ServiceDiscoveryConfig service_discovery;
     TimingProfile timing;
     std::vector<RadioEntry> radios;
 };
