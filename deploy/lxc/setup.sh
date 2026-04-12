@@ -1,3 +1,24 @@
+# Write minimal nginx config for monitor front-door
+cat > "$ROOTFS_DIR/etc/nginx/sites-available/rcc" <<'NGX_EOF'
+server {
+  listen 80 default_server;
+  server_name _;
+
+  proxy_http_version 1.1;
+  proxy_set_header Host $host;
+  proxy_set_header X-Real-IP $remote_addr;
+  proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+
+  location = / {
+    proxy_pass http://127.0.0.1:8084/monitor;
+  }
+
+  location = /monitor {
+    proxy_pass http://127.0.0.1:8084/monitor;
+  }
+}
+NGX_EOF
+ln -sf /etc/nginx/sites-available/rcc "$ROOTFS_DIR/etc/nginx/sites-enabled/default"
 #!/bin/bash
 # UltraLYNX LXC Container Package Builder for Radio Control Container
 # Usage: sudo ./setup.sh [arm32|arm64|amd64] [--debug|--release]
@@ -193,7 +214,7 @@ exit 101
 EOF
   chmod +x "$ROOTFS_DIR/usr/sbin/policy-rc.d"
 
-  chroot "$ROOTFS_DIR" /bin/bash -lc 'apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends ca-certificates libssl-dev libyaml-cpp-dev libfmt-dev nlohmann-json3-dev libasio-dev && apt-get clean && rm -rf /var/lib/apt/lists/*'
+  chroot "$ROOTFS_DIR" /bin/bash -lc 'apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends ca-certificates libssl-dev libyaml-cpp-dev libfmt-dev nlohmann-json3-dev libasio-dev nginx-light && apt-get clean && rm -rf /var/lib/apt/lists/*'
 
   if [[ "$DEBUG_MODE" == "true" ]]; then
     chroot "$ROOTFS_DIR" /bin/bash -lc 'apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends curl iproute2 net-tools procps openssh-server && apt-get clean && rm -rf /var/lib/apt/lists/*'
@@ -318,6 +339,13 @@ if [ "${DEBUG_MODE:-}" = "true" ] && [ -x /usr/sbin/sshd ]; then
     echo "$(date): Starting SSH server (debug mode)..." >> "$LOG_FILE"
     mkdir -p /run/sshd
     /usr/sbin/sshd >> "$LOG_FILE" 2>&1 &
+fi
+
+# Start nginx front-door so http://<container-ip>/ lands on /monitor
+if command -v nginx >/dev/null 2>&1; then
+    mkdir -p /run /var/log/nginx
+    echo "$(date): Starting nginx front-door..." >> "$LOG_FILE"
+    nginx >> "$LOG_FILE" 2>&1 &
 fi
 
 (
