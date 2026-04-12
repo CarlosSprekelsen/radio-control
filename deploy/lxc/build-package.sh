@@ -879,22 +879,27 @@ EOF
     # Create package
     local output_suffix=""
     [[ "$DEBUG" == "true" ]] && output_suffix="-debug"
-    local package_name="rcc-${ARCH}${output_suffix}-${BUILD_STAMP}"
+
+    # Stable container name (used in MANIFEST — INVISIO treats this as the identity;
+    # it must NOT vary per build or INVISIO registers a new container every upload).
+    local package_prefix="rcc-${ARCH}${output_suffix}"
+    # Timestamped tar filename preserves build history on the host filesystem.
+    local package_name="${package_prefix}-${BUILD_STAMP}"
 
     cat > "$STAGING_DIR/MANIFEST" <<EOF
-name=$package_name
+name=$package_prefix
 config=$CONFIG_NAME
 rootfs=$ROOTFS_NAME
 EOF
-    
+
     # Create final package (UltraLYNX format: uncompressed tar)
     local output="$OUTPUT_DIR/${package_name}.tar"
     log "[$ARCH] Creating UltraLYNX package (uncompressed tar)..."
     (cd "$STAGING_DIR" && "$TAR_CMD" -cf "$output" MANIFEST "$CONFIG_NAME" "$ROOTFS_NAME")
     chown "$BUILD_USER:$BUILD_GROUP" "$output"
-    
+
     # Create stable filename copy for build automation
-    local stable_name="rcc-${ARCH}${output_suffix}.tar"
+    local stable_name="${package_prefix}.tar"
     local stable_output="$OUTPUT_DIR/${stable_name}"
     cp -f "$output" "$stable_output"
     chown "$BUILD_USER:$BUILD_GROUP" "$stable_output"

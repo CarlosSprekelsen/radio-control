@@ -197,7 +197,21 @@ EOF
 
   if [[ "$DEBUG_MODE" == "true" ]]; then
     chroot "$ROOTFS_DIR" /bin/bash -lc 'apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends curl iproute2 net-tools procps openssh-server && apt-get clean && rm -rf /var/lib/apt/lists/*'
-    
+
+    # Configure SSH
+    mkdir -p "$ROOTFS_DIR/etc/ssh"
+    tee "$ROOTFS_DIR/etc/ssh/sshd_config" >/dev/null <<SSH_EOF
+Port 22
+AddressFamily any
+ListenAddress 0.0.0.0
+ListenAddress ::
+PermitRootLogin yes
+PasswordAuthentication yes
+PubkeyAuthentication yes
+X11Forwarding no
+Subsystem sftp /usr/lib/openssh/sftp-server
+SSH_EOF
+
     # Generate SSH host keys
     chroot "$ROOTFS_DIR" /bin/bash -c 'if command -v ssh-keygen >/dev/null 2>&1; then ssh-keygen -A || true; fi' 2>/dev/null || true
     
@@ -346,8 +360,9 @@ lxc.rootfs.path =
 lxc.uts.name =
 EOF
 
+  # INVISIO identity must be stable across rebuilds; only the tar filename carries BUILD_STAMP.
   cat > "$STAGING_DIR/MANIFEST" <<EOF
-name=$package_name
+name=$package_member_prefix
 config=$config_name
 rootfs=$rootfs_name
 EOF
@@ -358,6 +373,14 @@ EOF
   if [[ -n "${SUDO_USER:-}" && "${SUDO_USER}" != "root" ]]; then
     chown "$SUDO_USER:$(id -gn "$SUDO_USER" 2>/dev/null || echo "$SUDO_USER")" "$output_path"
   fi
+
+  # Stable filename copy for build automation (orchestrator expects <prefix>.tar)
+  local stable_output="$PACKAGES_DIR/${package_member_prefix}.tar"
+  cp -f "$output_path" "$stable_output"
+  if [[ -n "${SUDO_USER:-}" && "${SUDO_USER}" != "root" ]]; then
+    chown "$SUDO_USER:$(id -gn "$SUDO_USER" 2>/dev/null || echo "$SUDO_USER")" "$stable_output"
+  fi
+  log "Stable package copy: $stable_output"
 
   log "Package ready: $output_path"
 }
