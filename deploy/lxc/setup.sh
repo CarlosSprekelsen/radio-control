@@ -1,24 +1,3 @@
-# Write minimal nginx config for monitor front-door
-cat > "$ROOTFS_DIR/etc/nginx/sites-available/rcc" <<'NGX_EOF'
-server {
-  listen 80 default_server;
-  server_name _;
-
-  proxy_http_version 1.1;
-  proxy_set_header Host $host;
-  proxy_set_header X-Real-IP $remote_addr;
-  proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-
-  location = / {
-    proxy_pass http://127.0.0.1:8084/monitor;
-  }
-
-  location = /monitor {
-    proxy_pass http://127.0.0.1:8084/monitor;
-  }
-}
-NGX_EOF
-ln -sf /etc/nginx/sites-available/rcc "$ROOTFS_DIR/etc/nginx/sites-enabled/default"
 #!/bin/bash
 # UltraLYNX LXC Container Package Builder for Radio Control Container
 # Usage: sudo ./setup.sh [arm32|arm64|amd64] [--debug|--release]
@@ -26,6 +5,11 @@ ln -sf /etc/nginx/sites-available/rcc "$ROOTFS_DIR/etc/nginx/sites-enabled/defau
 # Output: packages/rcc-{arm32,arm64,amd64}{-debug}-YYYYMMDDTHHMMSSZ.tar
 #   Package contains: MANIFEST, {name}_config, {name}_rootfs.txz
 #   Cross-arch packaging expects a prebuilt binary unless packaging natively.
+#
+# Caching (speeds up repeated builds):
+#   .cache/debootstrap/         - debootstrap package cache
+#   .cache/debootstrap-tarball/ - base rootfs tarball (saves ~5-10 min)
+#   Set DISABLE_DEBOOTSTRAP_CACHE=true to force fresh debootstrap.
 
 [ -n "${BASH_VERSION:-}" ] || exec /bin/bash "$0" "$@"
 
@@ -40,6 +24,12 @@ BUILD_STAMP="${BUILD_STAMP:-$(date -u +%Y%m%dT%H%M%SZ)}"
 UBUNTU_RELEASE="${UBUNTU_RELEASE:-jammy}"
 MIRROR_DEFAULT="${MIRROR_DEFAULT:-http://archive.ubuntu.com/ubuntu}"
 MIRROR_PORTS="${MIRROR_PORTS:-http://ports.ubuntu.com/ubuntu-ports}"
+
+# Caching configuration
+DEBOOTSTRAP_CACHE_DIR="${DEBOOTSTRAP_CACHE_DIR:-$PROJECT_ROOT/.cache/debootstrap}"
+DISABLE_DEBOOTSTRAP_CACHE="${DISABLE_DEBOOTSTRAP_CACHE:-false}"
+USE_APT_CACHE_NG="${USE_APT_CACHE_NG:-auto}"
+APT_PROXY_URL="${APT_PROXY_URL:-}"
 
 TARGET_ARCH="arm32"
 DEBUG_MODE="false"
@@ -113,6 +103,29 @@ arch_vars() {
       error "Unsupported architecture: $1"
       ;;
   esac
+}
+
+# Detect and configure apt-cacher-ng if available
+detect_apt_proxy() {
+  local proxy=""
+  
+  # Use explicit proxy if set
+  if [[ -n "$APT_PROXY_URL" ]]; then
+    echo "$APT_PROXY_URL"
+    return 0
+  fi
+  
+  # Auto-detect if enabled
+  if [[ "$USE_APT_CACHE_NG" == "auto" ]]; then
+    # Check common apt-cacher-ng ports
+    if curl -sf --max-time 1 "http://localhost:3142" >/dev/null 2>&1; then
+      proxy="http://localhost:3142"
+    elif curl -sf --max-time 1 "http://127.0.0.1:3142" >/dev/null 2>&1; then
+      proxy="http://127.0.0.1:3142"
+    fi
+  fi
+  
+  echo "$proxy"
 }
 
 ensure_host_packages() {
@@ -195,13 +208,64 @@ prepare_rootfs() {
 
   ensure_host_packages debootstrap tar xz-utils ca-certificates qemu-user-static binfmt-support
 
+  # Setup caching
+  local cache_dir="$DEBOOTSTRAP_CACHE_DIR/$target_arch"
+  local tarball_dir="$PROJECT_ROOT/.cache/debootstrap-tarball"
+  local tarball_name="rcc-${UBUNTU_RELEASE}-${DEBOOTSTRAP_ARCH}.tar.gz"
+  local tarball_path="$tarball_dir/$tarball_name"
+  local apt_proxy
+  apt_proxy="$(detect_apt_proxy)"
+  
+  mkdir -p "$cache_dir" "$tarball_dir"
+  
+  local debootstrap_args=(
+    --arch="$DEBOOTSTRAP_ARCH"
+    --variant=minbase
+  )
+  
+  # Add cache directory if not disabled
+  if [[ "$DISABLE_DEBOOTSTRAP_CACHE" != "true" ]]; then
+    debootstrap_args+=(--cache-dir="$cache_dir")
+  fi
+  
+  # Add apt proxy if detected
+  if [[ -n "$apt_proxy" ]]; then
+    log "Using apt proxy: $apt_proxy"
+    debootstrap_args+=(--aptopt="Acquire::http::Proxy \"$apt_proxy\";")
+  fi
+
   if [[ "$(host_arch)" == "$target_arch" ]]; then
-    debootstrap --arch="$DEBOOTSTRAP_ARCH" --variant=minbase "$UBUNTU_RELEASE" "$ROOTFS_DIR" "$UBUNTU_MIRROR"
+    # Native build - try to use cached tarball
+    if [[ "$DISABLE_DEBOOTSTRAP_CACHE" != "true" && -f "$tarball_path" ]]; then
+      log "Using cached debootstrap tarball: $tarball_path"
+      debootstrap "${debootstrap_args[@]}" --unpack-tarball="$tarball_path" "$UBUNTU_RELEASE" "$ROOTFS_DIR" "$UBUNTU_MIRROR"
+    else
+      log "Running debootstrap (this may take 10-30 min on first run)..."
+      debootstrap "${debootstrap_args[@]}" "$UBUNTU_RELEASE" "$ROOTFS_DIR" "$UBUNTU_MIRROR"
+      # Cache the tarball for next time
+      if [[ "$DISABLE_DEBOOTSTRAP_CACHE" != "true" ]]; then
+        log "Creating tarball cache: $tarball_path"
+        tar -czf "$tarball_path" -C "$ROOTFS_DIR" . 2>/dev/null || log "Warning: Failed to create tarball cache"
+      fi
+    fi
   else
+    # Cross-arch build
     local qemu_binary
     qemu_binary="$(qemu_static_path "$target_arch")"
     [[ -n "$qemu_binary" ]] || error "Missing qemu static binary for $target_arch"
-    debootstrap --foreign --arch="$DEBOOTSTRAP_ARCH" --variant=minbase "$UBUNTU_RELEASE" "$ROOTFS_DIR" "$UBUNTU_MIRROR"
+    
+    if [[ "$DISABLE_DEBOOTSTRAP_CACHE" != "true" && -f "$tarball_path" ]]; then
+      log "Using cached debootstrap tarball: $tarball_path"
+      debootstrap "${debootstrap_args[@]}" --foreign --unpack-tarball="$tarball_path" "$UBUNTU_RELEASE" "$ROOTFS_DIR" "$UBUNTU_MIRROR"
+    else
+      log "Running cross-arch debootstrap (this may take 10-30 min on first run)..."
+      debootstrap "${debootstrap_args[@]}" --foreign "$UBUNTU_RELEASE" "$ROOTFS_DIR" "$UBUNTU_MIRROR"
+      if [[ "$DISABLE_DEBOOTSTRAP_CACHE" != "true" ]]; then
+        log "Creating tarball cache: $tarball_path"
+        tar -czf "$tarball_path" -C "$ROOTFS_DIR" . 2>/dev/null || log "Warning: Failed to create tarball cache"
+      fi
+    fi
+    
     mkdir -p "$ROOTFS_DIR/usr/bin"
     cp "$qemu_binary" "$ROOTFS_DIR/usr/bin/"
     chroot "$ROOTFS_DIR" /debootstrap/debootstrap --second-stage
@@ -214,25 +278,18 @@ exit 101
 EOF
   chmod +x "$ROOTFS_DIR/usr/sbin/policy-rc.d"
 
-  chroot "$ROOTFS_DIR" /bin/bash -lc 'apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends ca-certificates libssl-dev libyaml-cpp-dev libfmt-dev nlohmann-json3-dev libasio-dev nginx-light && apt-get clean && rm -rf /var/lib/apt/lists/*'
+  # Configure apt proxy in chroot if detected
+  if [[ -n "$apt_proxy" ]]; then
+    echo "Acquire::http::Proxy \"$apt_proxy\";" > "$ROOTFS_DIR/etc/apt/apt.conf.d/01proxy"
+  fi
+
+  # Enable universe repository for additional packages
+  chroot "$ROOTFS_DIR" /bin/bash -lc 'apt-get update && apt-get install -y --no-install-recommends software-properties-common && add-apt-repository -y universe && apt-get update'
+  chroot "$ROOTFS_DIR" /bin/bash -lc 'DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends ca-certificates libssl-dev libyaml-cpp-dev libfmt-dev nlohmann-json3-dev libasio-dev nginx-light && apt-get clean && rm -rf /var/lib/apt/lists/*'
 
   if [[ "$DEBUG_MODE" == "true" ]]; then
     chroot "$ROOTFS_DIR" /bin/bash -lc 'apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends curl iproute2 net-tools procps openssh-server && apt-get clean && rm -rf /var/lib/apt/lists/*'
-
-    # Configure SSH
-    mkdir -p "$ROOTFS_DIR/etc/ssh"
-    tee "$ROOTFS_DIR/etc/ssh/sshd_config" >/dev/null <<SSH_EOF
-Port 22
-AddressFamily any
-ListenAddress 0.0.0.0
-ListenAddress ::
-PermitRootLogin yes
-PasswordAuthentication yes
-PubkeyAuthentication yes
-X11Forwarding no
-Subsystem sftp /usr/lib/openssh/sftp-server
-SSH_EOF
-
+    
     # Generate SSH host keys
     chroot "$ROOTFS_DIR" /bin/bash -c 'if command -v ssh-keygen >/dev/null 2>&1; then ssh-keygen -A || true; fi' 2>/dev/null || true
     
@@ -250,16 +307,34 @@ SSH_EOF
     # Set root password for debug
     chroot "$ROOTFS_DIR" /bin/bash -c 'echo "root:debug123" | chpasswd' 2>/dev/null || true
     
-    # Inject SSH key if provided
-    if [[ -n "${TEST_USER_SSH_KEY:-}" ]]; then
-      mkdir -p "$ROOTFS_DIR/home/ubuntu/.ssh"
-      echo "${TEST_USER_SSH_KEY}" > "$ROOTFS_DIR/home/ubuntu/.ssh/authorized_keys"
-      chmod 600 "$ROOTFS_DIR/home/ubuntu/.ssh/authorized_keys" 2>/dev/null || true
-    fi
-    
     # Mark debug mode
     echo 'DEBUG_MODE=true' > "$ROOTFS_DIR/etc/environment.rcc"
   fi
+}
+
+write_nginx_config() {
+  cat > "$ROOTFS_DIR/etc/nginx/sites-available/rcc" <<'NGX_EOF'
+server {
+  listen 80 default_server;
+  server_name _;
+
+  proxy_http_version 1.1;
+  proxy_set_header Host $host;
+  proxy_set_header X-Real-IP $remote_addr;
+  proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+
+  location = / {
+    proxy_pass http://127.0.0.1:8084/monitor;
+  }
+
+  location = /monitor {
+    proxy_pass http://127.0.0.1:8084/monitor;
+  }
+}
+NGX_EOF
+  mkdir -p "$ROOTFS_DIR/etc/nginx/sites-enabled"
+  rm -f "$ROOTFS_DIR/etc/nginx/sites-enabled/default"
+  ln -sf /etc/nginx/sites-available/rcc "$ROOTFS_DIR/etc/nginx/sites-enabled/default"
 }
 
 install_payload() {
@@ -282,53 +357,52 @@ EOF
 set -eu
 
 LOG_FILE="/var/log/rcc/radio-control-container.log"
-mkdir -p /var/log/rcc
+mkdir -p /var/log/rcc /var/log/nginx
 
 # Detect first non-lo interface
 INTERFACE=""
 for iface in /sys/class/net/*; do
-    name="$(basename "$iface")"
-    [ "$name" = "lo" ] && continue
-    INTERFACE="$name"
-    break
+  name="$(basename "$iface")"
+  [ "$name" = "lo" ] && continue
+  INTERFACE="$name"
+  break
 done
+
 if [ -z "$INTERFACE" ]; then
-    echo "$(date): FATAL - no network interface found" >> "$LOG_FILE"
-    exit 1
+  echo "$(date): FATAL - no network interface found" >> "$LOG_FILE"
+  exit 1
 fi
 
-# --- Unified network readiness loop (Issue #42) ---
+# --- Unified network readiness loop ---
 STATIC_IP_CIDR="${STATIC_IP:-192.168.101.36/24}"
 STATIC_GW="${STATIC_GATEWAY:-192.168.101.100}"
 NET_TIMEOUT=90
 NET_ELAPSED=0
 NET_READY=false
 
-echo "$(date): Configuring network (iface=$INTERFACE ip=$STATIC_IP_CIDR gw=$STATIC_GW timeout=${NET_TIMEOUT}s)..." >> "$LOG_FILE"
-
 while [ "$NET_ELAPSED" -lt "$NET_TIMEOUT" ]; do
-    ip link set "$INTERFACE" up 2>/dev/null || true
+  ip link set "$INTERFACE" up 2>/dev/null || true
 
-    if ! ip addr show "$INTERFACE" 2>/dev/null | grep -q "inet ${STATIC_IP_CIDR%/*}/"; then
-        ip addr add "$STATIC_IP_CIDR" dev "$INTERFACE" 2>/dev/null || true
-    fi
+  if ! ip addr show "$INTERFACE" 2>/dev/null | grep -q "inet ${STATIC_IP_CIDR%/*}/"; then
+    ip addr add "$STATIC_IP_CIDR" dev "$INTERFACE" 2>/dev/null || true
+  fi
 
-    if ! ip route show default 2>/dev/null | grep -q "via $STATIC_GW"; then
-        ip route replace default via "$STATIC_GW" dev "$INTERFACE" 2>/dev/null || true
-    fi
+  if ! ip route show default 2>/dev/null | grep -q "via $STATIC_GW"; then
+    ip route replace default via "$STATIC_GW" dev "$INTERFACE" 2>/dev/null || true
+  fi
 
-    if ping -c1 -W1 "$STATIC_GW" >/dev/null 2>&1; then
-        NET_READY=true
-        echo "$(date): Network ready after ${NET_ELAPSED}s" >> "$LOG_FILE"
-        break
-    fi
+  if ping -c1 -W1 "$STATIC_GW" >/dev/null 2>&1; then
+    NET_READY=true
+    echo "$(date): Network ready after ${NET_ELAPSED}s" >> "$LOG_FILE"
+    break
+  fi
 
-    NET_ELAPSED=$((NET_ELAPSED + 1))
-    sleep 1
+  NET_ELAPSED=$((NET_ELAPSED + 1))
+  sleep 1
 done
 
 if [ "$NET_READY" = "false" ]; then
-    echo "$(date): WARNING - Network not ready after ${NET_TIMEOUT}s, starting service anyway" >> "$LOG_FILE"
+  echo "$(date): WARNING - Network not ready after ${NET_TIMEOUT}s, starting service anyway" >> "$LOG_FILE"
 fi
 
 # Source DEBUG_MODE if set
@@ -336,21 +410,20 @@ fi
 
 # Start SSH in debug mode
 if [ "${DEBUG_MODE:-}" = "true" ] && [ -x /usr/sbin/sshd ]; then
-    echo "$(date): Starting SSH server (debug mode)..." >> "$LOG_FILE"
-    mkdir -p /run/sshd
-    /usr/sbin/sshd >> "$LOG_FILE" 2>&1 &
+  echo "$(date): Starting SSH server (debug mode)..." >> "$LOG_FILE"
+  mkdir -p /run/sshd
+  /usr/sbin/sshd >> "$LOG_FILE" 2>&1 &
 fi
 
-# Start nginx front-door so http://<container-ip>/ lands on /monitor
+# Start nginx front-door
 if command -v nginx >/dev/null 2>&1; then
-    mkdir -p /run /var/log/nginx
-    echo "$(date): Starting nginx front-door..." >> "$LOG_FILE"
-    nginx >> "$LOG_FILE" 2>&1 &
+  echo "$(date): Starting nginx front-door..." >> "$LOG_FILE"
+  nginx >> "$LOG_FILE" 2>&1 &
 fi
 
 (
   while true; do
-    /usr/local/bin/radio-control-container /etc/rcc/config.yaml >>"$LOG_FILE" 2>&1 || true
+    /usr/local/bin/radio-control-container --config /etc/rcc/config.yaml >>"$LOG_FILE" 2>&1 || true
     sleep 5
   done
 ) &
@@ -411,6 +484,13 @@ EOF
   log "Stable package copy: $stable_output"
 
   log "Package ready: $output_path"
+  
+  # Print cache status
+  local cache_dir="$DEBOOTSTRAP_CACHE_DIR/$TARGET_ARCH"
+  local tarball_path="$PROJECT_ROOT/.cache/debootstrap-tarball/rcc-${UBUNTU_RELEASE}-$(arch_vars "$TARGET_ARCH" >/dev/null; echo "$DEBOOTSTRAP_ARCH").tar.gz"
+  log "Cache locations:"
+  log "  - Debootstrap cache: $cache_dir"
+  log "  - Tarball cache: $tarball_path"
 }
 
 main() {
@@ -418,6 +498,7 @@ main() {
   ensure_root
   resolve_binary
   prepare_rootfs "$TARGET_ARCH"
+  write_nginx_config
   install_payload "$RESOLVED_BINARY"
   create_package
 }
