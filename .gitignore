@@ -1,6 +1,9 @@
 rcc/build/
 .claude/
 /build-*/
+.cache/
+*.tar
+packages/*.tar
 *.log
 *.tmp
 *.bak
