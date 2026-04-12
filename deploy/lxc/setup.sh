@@ -196,7 +196,34 @@ EOF
   chroot "$ROOTFS_DIR" /bin/bash -lc 'apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends ca-certificates libssl-dev libyaml-cpp-dev libfmt-dev nlohmann-json3-dev libasio-dev && apt-get clean && rm -rf /var/lib/apt/lists/*'
 
   if [[ "$DEBUG_MODE" == "true" ]]; then
-    chroot "$ROOTFS_DIR" /bin/bash -lc 'apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends curl iproute2 net-tools procps && apt-get clean && rm -rf /var/lib/apt/lists/*'
+    chroot "$ROOTFS_DIR" /bin/bash -lc 'apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends curl iproute2 net-tools procps openssh-server && apt-get clean && rm -rf /var/lib/apt/lists/*'
+    
+    # Generate SSH host keys
+    chroot "$ROOTFS_DIR" /bin/bash -c 'if command -v ssh-keygen >/dev/null 2>&1; then ssh-keygen -A || true; fi' 2>/dev/null || true
+    
+    # Create test user 'ubuntu' with password 'ubuntu' for debug access
+    chroot "$ROOTFS_DIR" /bin/bash -c '
+      if ! id -u ubuntu >/dev/null 2>&1; then
+        useradd -m -s /bin/bash ubuntu || true
+      fi
+      echo "ubuntu:ubuntu" | chpasswd || true
+      mkdir -p /home/ubuntu/.ssh || true
+      chown ubuntu:ubuntu /home/ubuntu/.ssh || true
+      chmod 700 /home/ubuntu/.ssh || true
+    ' 2>/dev/null || true
+    
+    # Set root password for debug
+    chroot "$ROOTFS_DIR" /bin/bash -c 'echo "root:debug123" | chpasswd' 2>/dev/null || true
+    
+    # Inject SSH key if provided
+    if [[ -n "${TEST_USER_SSH_KEY:-}" ]]; then
+      mkdir -p "$ROOTFS_DIR/home/ubuntu/.ssh"
+      echo "${TEST_USER_SSH_KEY}" > "$ROOTFS_DIR/home/ubuntu/.ssh/authorized_keys"
+      chmod 600 "$ROOTFS_DIR/home/ubuntu/.ssh/authorized_keys" 2>/dev/null || true
+    fi
+    
+    # Mark debug mode
+    echo 'DEBUG_MODE=true' > "$ROOTFS_DIR/etc/environment.rcc"
   fi
 }
 
@@ -267,6 +294,16 @@ done
 
 if [ "$NET_READY" = "false" ]; then
     echo "$(date): WARNING - Network not ready after ${NET_TIMEOUT}s, starting service anyway" >> "$LOG_FILE"
+fi
+
+# Source DEBUG_MODE if set
+[ -f /etc/environment.rcc ] && . /etc/environment.rcc
+
+# Start SSH in debug mode
+if [ "${DEBUG_MODE:-}" = "true" ] && [ -x /usr/sbin/sshd ]; then
+    echo "$(date): Starting SSH server (debug mode)..." >> "$LOG_FILE"
+    mkdir -p /run/sshd
+    /usr/sbin/sshd >> "$LOG_FILE" 2>&1 &
 fi
 
 (

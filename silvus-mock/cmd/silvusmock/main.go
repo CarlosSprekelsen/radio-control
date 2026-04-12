@@ -41,8 +41,8 @@ func main() {
 	// Determine HTTP port based on dev mode
 	httpPort := cfg.Network.HTTP.Port
 	if cfg.Network.HTTP.DevMode {
-		httpPort = 8080
-		log.Println("Development mode: using port 8080")
+		httpPort = 8081
+		log.Println("Development mode: using port 8081")
 	}
 
 	httpServer := &http.Server{
