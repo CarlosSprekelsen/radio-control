@@ -1,7 +1,9 @@
 #pragma once
 
+#include <chrono>
 #include <cstdint>
 #include <memory>
+#include <string>
 
 namespace asio {
 class io_context;
@@ -43,6 +45,7 @@ public:
 
     void start();
     void stop();
+    bool awaitListening(std::chrono::milliseconds timeout);
 
 private:
     class Impl;

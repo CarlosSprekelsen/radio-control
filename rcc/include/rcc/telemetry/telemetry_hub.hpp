@@ -5,6 +5,7 @@
 // headers out of the public RCC interface.
 
 #include "rcc/config/types.hpp"
+#include <chrono>
 #include <nlohmann/json.hpp>
 #include <memory>
 #include <string>
@@ -27,6 +28,7 @@ public:
 
     void start();
     void stop();
+    bool awaitListening(std::chrono::milliseconds timeout);
 
     void publishReady(const std::string& containerId, const std::string& deployment);
     void publishRadioState(const std::string& radioId, const std::string& status,

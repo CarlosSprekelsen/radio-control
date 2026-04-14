@@ -42,16 +42,15 @@ public:
 
     void start() {
         sseServer_->start();
-        publishEvent("rcc.ready", nlohmann::json{
-            {"event",      "ready"},
-            {"containerId", containerId_},
-            {"deployment",  deployment_}
-        });
     }
 
     void stop() {
         sseServer_->stop();
         eventBus_.stop();
+    }
+
+    bool awaitListening(std::chrono::milliseconds timeout) {
+        return sseServer_->awaitListening(timeout);
     }
 
     void publishEvent(const std::string& tag, nlohmann::json payload) {
@@ -87,6 +86,10 @@ void TelemetryHub::start() {
 
 void TelemetryHub::stop() {
     impl_->stop();
+}
+
+bool TelemetryHub::awaitListening(std::chrono::milliseconds timeout) {
+    return impl_->awaitListening(timeout);
 }
 
 void TelemetryHub::publishReady(const std::string& containerId,
