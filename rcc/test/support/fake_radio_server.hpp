@@ -30,7 +30,10 @@ public:
     FakeRadioServer(const FakeRadioServer&)            = delete;
     FakeRadioServer& operator=(const FakeRadioServer&) = delete;
 
-    void setResponse(RadioResponse resp) { response_ = std::move(resp); }
+    void setResponse(RadioResponse resp) { response_ = std::move(resp); response_handler_ = std::nullopt; }
+    void setHandler(std::function<RadioResponse(const std::string&)> handler) {
+        response_handler_ = std::move(handler);
+    }
     uint16_t port() const noexcept { return port_; }
     int requestCount() const noexcept { return request_count_.load(); }
 
@@ -42,6 +45,7 @@ private:
 
     uint16_t            port_;
     RadioResponse       response_;
+    std::optional<std::function<RadioResponse(const std::string&)>> response_handler_;
     std::atomic<bool>   running_{false};
     std::atomic<int>    request_count_{0};
     int                 server_fd_{-1};

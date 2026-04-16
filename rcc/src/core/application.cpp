@@ -154,7 +154,6 @@ void Application::start() {
     };
 
     asio::post(runner_->io(), [readinessCheck]() { (*readinessCheck)(); });
->>>>>>> origin/master
 }
 
 void Application::stop() {
