@@ -50,16 +50,23 @@ void FakeRadioServer::acceptLoop() {
 
         // Read request (ignore content)
         char buf[4096] = {};
-        ::recv(cfd, buf, sizeof(buf) - 1, 0);
-        ++request_count_;
+        const ssize_t received = ::recv(cfd, buf, sizeof(buf) - 1, 0);
+        if (received >= 0) {
+            ++request_count_;
+        }
 
-        // Send scripted response
+        const std::string request(buf, received > 0 ? static_cast<size_t>(received) : 0);
+        RadioResponse response = response_;
+        if (response_handler_) {
+            response = (*response_handler_)(request);
+        }
+
         std::ostringstream resp;
-        resp << "HTTP/1.1 " << response_.http_status << " OK\r\n"
+        resp << "HTTP/1.1 " << response.http_status << " OK\r\n"
              << "Content-Type: application/json\r\n"
-             << "Content-Length: " << response_.body.size() << "\r\n"
+             << "Content-Length: " << response.body.size() << "\r\n"
              << "Connection: close\r\n\r\n"
-             << response_.body;
+             << response.body;
         const auto s = resp.str();
         ::send(cfd, s.data(), s.size(), MSG_NOSIGNAL);
         ::close(cfd);

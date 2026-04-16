@@ -10,12 +10,10 @@
 
 #include <algorithm>
 #include <cmath>
-#include <chrono>
-#include <iostream>
+#include <cctype>
 #include <optional>
 #include <sstream>
 #include <string>
-#include <utility>
 #include <vector>
 
 namespace rcc::adapter {
@@ -29,26 +27,28 @@ struct EndpointInfo {
 };
 
 std::optional<EndpointInfo> parseEndpoint(const std::string& endpoint) {
-    const std::string prefixHttp = "http://";
-    if (endpoint.rfind(prefixHttp, 0) != 0) {
+    const std::string prefix = "http://";
+    if (endpoint.rfind(prefix, 0) != 0) {
         return std::nullopt;
     }
-    auto remainder = endpoint.substr(prefixHttp.size());
-    std::string host;
-    std::string port = "80";
+
+    std::string remainder = endpoint.substr(prefix.size());
+    std::string hostPort;
     std::string path = "/streamscape_api";
 
     const auto slashPos = remainder.find('/');
-    std::string hostPort = slashPos == std::string::npos
-                               ? remainder
-                               : remainder.substr(0, slashPos);
-    if (slashPos != std::string::npos) {
-        const auto remainderPath = remainder.substr(slashPos);
-        if (!remainderPath.empty()) {
-            path = remainderPath;
+    if (slashPos == std::string::npos) {
+        hostPort = remainder;
+    } else {
+        hostPort = remainder.substr(0, slashPos);
+        const auto candidate = remainder.substr(slashPos);
+        if (!candidate.empty()) {
+            path = candidate;
         }
     }
 
+    std::string host;
+    std::string port = "80";
     const auto colonPos = hostPort.find(':');
     if (colonPos == std::string::npos) {
         host = hostPort;
@@ -66,7 +66,6 @@ std::optional<EndpointInfo> parseEndpoint(const std::string& endpoint) {
     return EndpointInfo{std::move(host), std::move(port), std::move(path)};
 }
 
-
 std::optional<std::string> sendHttpPost(const std::string& endpoint,
                                         const std::string& requestBody,
                                         std::string& error) {
@@ -78,9 +77,9 @@ std::optional<std::string> sendHttpPost(const std::string& endpoint,
 
     asio::io_context io;
     asio::ip::tcp::resolver resolver(io);
-    asio::ip::tcp::resolver::results_type endpoints;
+    asio::ip::tcp::resolver::results_type results;
     try {
-        endpoints = resolver.resolve(parsed->host, parsed->port);
+        results = resolver.resolve(parsed->host, parsed->port);
     } catch (const std::exception& ex) {
         error = std::string("DNS resolve failed: ") + ex.what();
         return std::nullopt;
@@ -88,7 +87,7 @@ std::optional<std::string> sendHttpPost(const std::string& endpoint,
 
     asio::ip::tcp::socket socket(io);
     try {
-        asio::connect(socket, endpoints);
+        asio::connect(socket, results);
     } catch (const std::exception& ex) {
         error = std::string("Connection failed: ") + ex.what();
         return std::nullopt;
@@ -143,16 +142,39 @@ std::optional<std::string> sendHttpPost(const std::string& endpoint,
             return static_cast<char>(std::tolower(c));
         });
         if (lower.rfind("content-length:", 0) == 0) {
-            const auto value = header.substr(std::string("content-length:").size());
-            contentLength = std::stoull(value);
+            const auto value = header.substr(std::string("Content-Length:").size());
+            try {
+                contentLength = std::stoull(value);
+            } catch (...) {
+                contentLength = 0;
+            }
         }
     }
 
     std::string body;
     if (contentLength > 0) {
-        std::vector<char> data(contentLength);
-        asio::read(socket, asio::buffer(data), asio::transfer_exactly(contentLength));
-        body.assign(data.data(), contentLength);
+        body.reserve(contentLength);
+        if (responseBuffer.size() > 0) {
+            std::string bufferedBody{
+                std::istreambuf_iterator<char>(&responseBuffer),
+                std::istreambuf_iterator<char>()};
+            if (bufferedBody.size() > contentLength) {
+                bufferedBody.resize(contentLength);
+            }
+            body += bufferedBody;
+        }
+
+        if (body.size() < contentLength) {
+            const auto remaining = contentLength - body.size();
+            std::vector<char> data(remaining);
+            try {
+                asio::read(socket, asio::buffer(data), asio::transfer_exactly(remaining));
+                body.append(data.data(), remaining);
+            } catch (const std::exception& ex) {
+                error = std::string("Body read failed: ") + ex.what();
+                return std::nullopt;
+            }
+        }
     } else {
         std::ostringstream remaining;
         if (responseStream.rdbuf()->in_avail() > 0) {
@@ -160,7 +182,6 @@ std::optional<std::string> sendHttpPost(const std::string& endpoint,
         }
         std::error_code ec;
         while (asio::read(socket, responseBuffer, asio::transfer_at_least(1), ec)) {
-            // continue reading until EOF or error
         }
         if (ec == asio::error::eof || !ec) {
             if (responseBuffer.size() > 0) {
@@ -176,7 +197,83 @@ std::optional<std::string> sendHttpPost(const std::string& endpoint,
         error = "HTTP " + std::to_string(statusCode);
         return std::nullopt;
     }
+
     return body;
+}
+
+std::vector<double> parseSupportedFrequencies(const nlohmann::json& response) {
+    std::vector<double> freqs;
+    if (!response.contains("result") || !response["result"].is_array()) {
+        return freqs;
+    }
+
+    for (const auto& item : response["result"]) {
+        if (!item.is_object()) {
+            continue;
+        }
+        if (!item.contains("frequencies") || !item["frequencies"].is_array()) {
+            continue;
+        }
+        for (const auto& entry : item["frequencies"]) {
+            if (!entry.is_string()) {
+                continue;
+            }
+            const auto text = entry.get<std::string>();
+            const auto colon = text.find(':');
+            if (colon == std::string::npos) {
+                try {
+                    freqs.push_back(std::stod(text));
+                } catch (...) {
+                }
+            } else {
+                const auto first = text.substr(0, colon);
+                const auto last = text.substr(text.rfind(':') + 1);
+                try {
+                    freqs.push_back(std::stod(first));
+                    freqs.push_back(std::stod(last));
+                } catch (...) {
+                }
+            }
+        }
+    }
+
+    std::sort(freqs.begin(), freqs.end());
+    freqs.erase(std::unique(freqs.begin(), freqs.end()), freqs.end());
+    return freqs;
+}
+
+std::optional<int> parsePowerResult(const nlohmann::json& response) {
+    if (!response.contains("result") || !response["result"].is_array() || response["result"].empty()) {
+        return std::nullopt;
+    }
+    const auto& result = response["result"][0];
+    try {
+        if (result.is_string()) {
+            return std::stoi(result.get<std::string>());
+        }
+        if (result.is_number_integer()) {
+            return result.get<int>();
+        }
+    } catch (...) {
+    }
+    return std::nullopt;
+}
+
+std::optional<double> parseFrequencyResult(const nlohmann::json& response) {
+    if (!response.contains("result") || !response["result"].is_array() || response["result"].empty()) {
+        return std::nullopt;
+    }
+    const auto& result = response["result"][0];
+    try {
+        if (result.is_string()) {
+            return std::stod(result.get<std::string>());
+        }
+        if (result.is_number()) {
+            return result.get<double>();
+        }
+    } catch (...) {
+    }
+    return std::nullopt;
 }
 
 std::optional<int> findChannelIndex(const CapabilityInfo& caps, double frequencyMhz) {
@@ -209,11 +306,13 @@ CapabilityInfo SilvusAdapter::capabilities() const {
 
 common::CommandResult SilvusAdapter::connect() {
     std::lock_guard<std::mutex> lock(mutex_);
+
     nlohmann::json request = {
         {"jsonrpc", "2.0"},
         {"id", "1"},
         {"method", "supported_frequency_profiles"}
     };
+
     std::string error;
     const auto responseBody = sendHttpPost(endpoint_, request.dump(), error);
     if (!responseBody) {
@@ -231,45 +330,24 @@ common::CommandResult SilvusAdapter::connect() {
         return {common::CommandResultCode::Unavailable, response["error"].dump(), std::nullopt};
     }
 
-    if (response.contains("result") && response["result"].is_array()) {
-        std::vector<double> freqs;
-        for (const auto& profile : response["result"]) {
-            if (!profile.is_object()) continue;
-            if (!profile.contains("frequencies") || !profile["frequencies"].is_array()) continue;
-            for (const auto& entry : profile["frequencies"]) {
-                if (!entry.is_string()) continue;
-                const auto text = entry.get<std::string>();
-                const auto colon = text.find(':');
-                if (colon == std::string::npos) {
-                    try {
-                        freqs.push_back(std::stod(text));
-                    } catch (...) {}
-                } else {
-                    const auto parts = text;
-                    const auto first = parts.substr(0, colon);
-                    const auto last = parts.substr(parts.rfind(':') + 1);
-                    try {
-                        const double low = std::stod(first);
-                        const double high = std::stod(last);
-                        freqs.push_back(low);
-                        freqs.push_back(high);
-                    } catch (...) {}
-                }
-            }
-        }
-        if (!freqs.empty()) {
-            std::sort(freqs.begin(), freqs.end());
-            freqs.erase(std::unique(freqs.begin(), freqs.end()), freqs.end());
-            capabilities_.supported_frequencies_mhz = std::move(freqs);
-        }
+    const auto freqs = parseSupportedFrequencies(response);
+    if (!freqs.empty()) {
+        capabilities_.supported_frequencies_mhz = freqs;
     }
 
     state_.status = common::RadioStatus::Ready;
-    return {common::CommandResultCode::Ok, {}, {}};
+    return {common::CommandResultCode::Ok, {}, std::nullopt};
 }
 
 common::CommandResult SilvusAdapter::set_power(double watts) {
     std::lock_guard<std::mutex> lock(mutex_);
+
+    if (watts < capabilities_.power_range_watts.first ||
+        watts > capabilities_.power_range_watts.second) {
+        return {common::CommandResultCode::InvalidRange,
+                "Power outside supported range", std::nullopt};
+    }
+
     const double dbm = std::round(10.0 * std::log10(watts * 1000.0));
     nlohmann::json request = {
         {"jsonrpc", "2.0"},
@@ -277,6 +355,7 @@ common::CommandResult SilvusAdapter::set_power(double watts) {
         {"method", "power_dBm"},
         {"params", {std::to_string(static_cast<int>(dbm))}}
     };
+
     std::string error;
     const auto responseBody = sendHttpPost(endpoint_, request.dump(), error);
     if (!responseBody) {
@@ -296,18 +375,25 @@ common::CommandResult SilvusAdapter::set_power(double watts) {
 
     state_.power_watts = watts;
     state_.status = common::RadioStatus::Ready;
-    return {common::CommandResultCode::Ok, {}, {}};
+    return {common::CommandResultCode::Ok, {}, std::nullopt};
 }
 
 common::CommandResult SilvusAdapter::set_channel(int channel_index,
                                                   double frequency_mhz) {
     std::lock_guard<std::mutex> lock(mutex_);
+
+    if (channel_index <= 0 || frequency_mhz <= 0.0) {
+        return {common::CommandResultCode::InvalidRange,
+                "Invalid channel or frequency", std::nullopt};
+    }
+
     nlohmann::json request = {
         {"jsonrpc", "2.0"},
         {"id", "1"},
         {"method", "freq"},
         {"params", {std::to_string(frequency_mhz)}}
     };
+
     std::string error;
     const auto responseBody = sendHttpPost(endpoint_, request.dump(), error);
     if (!responseBody) {
@@ -327,11 +413,12 @@ common::CommandResult SilvusAdapter::set_channel(int channel_index,
 
     state_.channel_index = channel_index;
     state_.status = common::RadioStatus::Ready;
-    return {common::CommandResultCode::Ok, {}, {}};
+    return {common::CommandResultCode::Ok, {}, std::nullopt};
 }
 
 common::CommandResult SilvusAdapter::refresh_state() {
     std::lock_guard<std::mutex> lock(mutex_);
+
     nlohmann::json powerRequest = {
         {"jsonrpc", "2.0"},
         {"id", "1"},
@@ -353,14 +440,10 @@ common::CommandResult SilvusAdapter::refresh_state() {
         return {common::CommandResultCode::Unavailable, powerResponse["error"].dump(), std::nullopt};
     }
 
-    if (powerResponse.contains("result") && powerResponse["result"].is_array() && !powerResponse["result"].empty()) {
-        const auto value = powerResponse["result"][0].get<std::string>();
-        try {
-            const int dbm = std::stoi(value);
-            state_.power_watts = std::pow(10.0, dbm / 10.0) / 1000.0;
-        } catch (...) {
-            state_.power_watts.reset();
-        }
+    if (const auto powerDbm = parsePowerResult(powerResponse)) {
+        state_.power_watts = std::pow(10.0, *powerDbm / 10.0) / 1000.0;
+    } else {
+        state_.power_watts.reset();
     }
 
     nlohmann::json freqRequest = {
@@ -383,23 +466,18 @@ common::CommandResult SilvusAdapter::refresh_state() {
         return {common::CommandResultCode::Unavailable, freqResponse["error"].dump(), std::nullopt};
     }
 
-    if (freqResponse.contains("result") && freqResponse["result"].is_array() && !freqResponse["result"].empty()) {
-        const auto value = freqResponse["result"][0].get<std::string>();
-        try {
-            const double freq = std::stod(value);
-            const auto maybeIndex = findChannelIndex(capabilities_, freq);
-            if (maybeIndex) {
-                state_.channel_index = *maybeIndex;
-            } else {
-                state_.channel_index.reset();
-            }
-        } catch (...) {
+    if (const auto frequency = parseFrequencyResult(freqResponse)) {
+        if (const auto maybeIndex = findChannelIndex(capabilities_, *frequency)) {
+            state_.channel_index = *maybeIndex;
+        } else {
             state_.channel_index.reset();
         }
+    } else {
+        state_.channel_index.reset();
     }
 
     state_.status = common::RadioStatus::Ready;
-    return {common::CommandResultCode::Ok, {}, {}};
+    return {common::CommandResultCode::Ok, {}, std::nullopt};
 }
 
 common::RadioState SilvusAdapter::state() const {
