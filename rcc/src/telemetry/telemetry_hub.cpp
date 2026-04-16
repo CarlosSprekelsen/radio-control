@@ -92,47 +92,72 @@ bool TelemetryHub::awaitListening(std::chrono::milliseconds timeout) {
     return impl_->awaitListening(timeout);
 }
 
-void TelemetryHub::publishReady(const std::string& containerId,
-                                const std::string& deployment) {
-    impl_->publishEvent("rcc.ready", nlohmann::json{
-        {"event",       "ready"},
-        {"containerId", containerId},
-        {"deployment",  deployment}
-    });
+static std::string now_iso8601() {
+    using namespace std::chrono;
+    const auto now = system_clock::now();
+    const auto time = system_clock::to_time_t(now);
+    std::tm utc;
+    gmtime_r(&time, &utc);
+    char buf[32];
+    std::strftime(buf, sizeof(buf), "%Y-%m-%dT%H:%M:%SZ", &utc);
+    return buf;
+}
+
+void TelemetryHub::publishReady(nlohmann::json snapshot) {
+    impl_->publishEvent("ready", nlohmann::json{{"snapshot", std::move(snapshot)}});
 }
 
 void TelemetryHub::publishRadioState(const std::string& radioId,
                                      const std::string& status,
-                                     int channelIndex, double powerWatts) {
-    impl_->publishEvent("rcc.radio.state", nlohmann::json{
-        {"radioId",      radioId},
-        {"status",       status},
-        {"channelIndex", channelIndex},
-        {"powerWatts",   powerWatts}
-    });
+                                     int channelIndex, double powerWatts,
+                                     double frequencyMHz) {
+    double powerDbm = 10.0 * std::log10(powerWatts * 1000.0);
+    nlohmann::json payload = {
+        {"radioId", radioId},
+        {"status", status},
+        {"powerDbm", std::round(powerDbm)},
+        {"ts", now_iso8601()}
+    };
+    if (channelIndex > 0) {
+        payload["channelIndex"] = channelIndex;
+    } else {
+        payload["channelIndex"] = nullptr;
+    }
+    if (frequencyMHz > 0.0) {
+        payload["frequencyMhz"] = frequencyMHz;
+    } else {
+        payload["frequencyMhz"] = nullptr;
+    }
+    impl_->publishEvent("state", std::move(payload));
 }
 
 void TelemetryHub::publishChannelChanged(const std::string& radioId,
                                          int channelIndex, double frequencyMHz) {
-    impl_->publishEvent("rcc.radio.channel", nlohmann::json{
+    impl_->publishEvent("channelChanged", nlohmann::json{
         {"radioId",      radioId},
+        {"frequencyMhz", frequencyMHz},
         {"channelIndex", channelIndex},
-        {"frequencyMHz", frequencyMHz}
+        {"ts",           now_iso8601()}
     });
 }
 
 void TelemetryHub::publishPowerChanged(const std::string& radioId, double watts) {
-    impl_->publishEvent("rcc.radio.power", nlohmann::json{
-        {"radioId",    radioId},
-        {"powerWatts", watts}
+    double powerDbm = 10.0 * std::log10(watts * 1000.0);
+    impl_->publishEvent("powerChanged", nlohmann::json{
+        {"radioId", radioId},
+        {"powerDbm", std::round(powerDbm)},
+        {"ts", now_iso8601()}
     });
 }
 
 void TelemetryHub::publishFault(const std::string& radioId,
                                 const std::string& reason) {
-    impl_->publishEvent("rcc.fault", nlohmann::json{
+    impl_->publishEvent("fault", nlohmann::json{
         {"radioId", radioId},
-        {"reason",  reason}
+        {"code",    "INTERNAL"},
+        {"message", reason},
+        {"details", {"retryMs", 0}},
+        {"ts",      now_iso8601()}
     });
 }
 

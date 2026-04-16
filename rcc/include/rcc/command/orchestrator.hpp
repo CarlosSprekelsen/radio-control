@@ -29,7 +29,8 @@ struct CommandResult {
         Busy,
         Unavailable,
         InternalError,
-        Unauthorized
+        Unauthorized,
+        NotFound
     };
 
     Code code{Code::InternalError};

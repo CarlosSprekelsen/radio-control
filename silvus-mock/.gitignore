@@ -1,0 +1,11 @@
+# Ignore local CMake build artifacts for the standalone silvus-mock component
+build/
+*.o
+*.obj
+*.exe
+*.log
+CMakeCache.txt
+CMakeFiles/
+Makefile
+cmake_install.cmake
+install_manifest.txt

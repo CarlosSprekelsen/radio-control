@@ -6,20 +6,64 @@
 #include "rcc/command/orchestrator.hpp"
 #include "rcc/config/config_manager.hpp"
 #include "rcc/radio/radio_manager.hpp"
+#include "rcc/adapter/radio_adapter.hpp"
 #include "rcc/telemetry/telemetry_hub.hpp"
 #include "rcc/version.hpp"
 
 #include "dts/common/core/service_runner.hpp"
 #include "dts/common/discovery/discovery.hpp"
 
+#include <cmath>
 #include <chrono>
 #include <functional>
 #include <iostream>
+#include <nlohmann/json.hpp>
 
 using ::dts::common::discovery::DiscoveryEndpointMap;
 using ::dts::common::discovery::DiscoveryResponder;
 using ::dts::common::discovery::DiscoveryResponderConfig;
 using ::dts::common::discovery::DiscoveryServiceDescriptor;
+
+static nlohmann::json build_ready_snapshot(const rcc::radio::RadioManager& radioManager) {
+    const auto radios = radioManager.list_radios();
+    const auto activeId = radioManager.active_radio();
+
+    nlohmann::json items = nlohmann::json::array();
+    for (const auto& desc : radios) {
+        const auto state = desc.adapter ? desc.adapter->state() : desc.state;
+        const auto caps = desc.adapter ? desc.adapter->capabilities()
+                                       : rcc::adapter::CapabilityInfo{};
+
+        double frequencyMhz = 0.0;
+        if (state.channel_index.has_value() && !caps.supported_frequencies_mhz.empty()) {
+            const size_t idx = static_cast<size_t>(state.channel_index.value());
+            if (idx >= 1 && idx <= caps.supported_frequencies_mhz.size()) {
+                frequencyMhz = caps.supported_frequencies_mhz[idx - 1];
+            }
+        }
+
+        items.push_back(nlohmann::json{
+            {"id", desc.id},
+            {"model", "Silvus-" + desc.id},
+            {"status", (state.status == rcc::common::RadioStatus::Ready ||
+                         state.status == rcc::common::RadioStatus::Discovering ||
+                         state.status == rcc::common::RadioStatus::Busy)
+                            ? "online" : state.status == rcc::common::RadioStatus::Recovering
+                            ? "recovering" : "offline"},
+            {"state", {
+                {"powerDbm", state.power_watts.has_value()
+                                   ? nlohmann::json(std::round(10.0 * std::log10(state.power_watts.value() * 1000.0)))
+                                   : nlohmann::json(nullptr)},
+                {"frequencyMhz", frequencyMhz > 0.0
+                                   ? nlohmann::json(frequencyMhz)
+                                   : nlohmann::json(nullptr)}
+            }}
+        });
+    }
+
+    return nlohmann::json{{"activeRadioId", activeId.has_value() ? nlohmann::json(*activeId) : nlohmann::json(nullptr)},
+                          {"radios", std::move(items)}};
+}
 
 namespace rcc::core {
 
@@ -88,7 +132,7 @@ void Application::initialize(int argc, char* argv[]) {
       return DiscoveryEndpointMap{
           {"rest", "http://" + host + ":" + std::to_string(command_port)},
           {"sse", "http://" + host + ":" + std::to_string(sse_port) +
-                      "/api/v1/events"},
+                      "/api/v1/telemetry"},
           {"health", "http://" + host + ":" + std::to_string(command_port) +
                          "/api/v1/health"},
       };
@@ -125,8 +169,7 @@ void Application::start() {
         if (telemetry_->awaitListening(std::chrono::milliseconds(0)) &&
             apiGateway_->awaitListening(std::chrono::milliseconds(0))) {
             const auto& cfg = config_->current();
-            telemetry_->publishReady(cfg.container.container_id,
-                                     cfg.container.deployment);
+            telemetry_->publishReady(build_ready_snapshot(*radioManager_));
             std::cout << "Listening on port " << cfg.network.command_port
                       << " (SSE on port "
                       << (cfg.telemetry.sse_port > 0
@@ -154,7 +197,6 @@ void Application::start() {
     };
 
     asio::post(runner_->io(), [readinessCheck]() { (*readinessCheck)(); });
->>>>>>> origin/master
 }
 
 void Application::stop() {

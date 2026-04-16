@@ -30,9 +30,10 @@ public:
     void stop();
     bool awaitListening(std::chrono::milliseconds timeout);
 
-    void publishReady(const std::string& containerId, const std::string& deployment);
+    void publishReady(nlohmann::json snapshot);
     void publishRadioState(const std::string& radioId, const std::string& status,
-                           int channelIndex, double powerWatts);
+                           int channelIndex, double powerWatts,
+                           double frequencyMHz = 0.0);
     void publishChannelChanged(const std::string& radioId, int channelIndex,
                                double frequencyMHz);
     void publishPowerChanged(const std::string& radioId, double watts);
