@@ -160,9 +160,9 @@ TEST(TelemetrySSE, PublishEventReachesClient) {
     // Publish an event
     hub.publishPowerChanged("radio-1", 1.5);
 
-    // Read the SSE stream and look for the event
-    const bool found = readSseEvent(fd, "rcc.radio.power");
-    EXPECT_TRUE(found) << "Did not receive rcc.radio.power event within timeout";
+    // Per SSE v1 contract, power updates are published as `event: powerChanged`.
+    const bool found = readSseEvent(fd, "event: powerChanged");
+    EXPECT_TRUE(found) << "Did not receive powerChanged event within timeout";
 
     ::close(fd);
     hub.stop();
