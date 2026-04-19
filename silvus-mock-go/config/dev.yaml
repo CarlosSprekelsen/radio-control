@@ -1,6 +1,0 @@
-# Development Configuration
-# Overrides default.yaml for development use
-
-network:
-  http:
-    devMode: true  # Use port 8080 for development
