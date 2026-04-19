@@ -1,6 +1,6 @@
 container:
-  id: "rcc-e2e"
-  deployment: "e2e"
+  id: "rcc-bench"
+  deployment: "bench"
   soldier_id: "operator-001"
 network:
   bind_address: "0.0.0.0"
@@ -13,8 +13,8 @@ telemetry:
   max_sse_clients: 8
   client_idle_timeout_sec: 60
 security:
-  token_secret: "e2e-test-secret"
-  allow_unauthenticated_dev_access: true
+  token_secret: "dts-bench-radio-2026"
+  allow_unauthenticated_dev_access: false
   allowed_roles:
     - viewer
     - controller

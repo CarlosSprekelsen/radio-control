@@ -17,8 +17,11 @@
 
 #include <atomic>
 #include <cmath>
+#include <cstdint>
 #include <future>
 #include <memory>
+#include <mutex>
+#include <optional>
 #include <string>
 #include <utility>
 
@@ -103,6 +106,11 @@ public:
         eventBus_.publish(tag, std::move(payload));
     }
 
+    void rememberReadySnapshot(nlohmann::json snapshot) {
+        std::lock_guard<std::mutex> lock(readyMutex_);
+        lastReadyPayload_ = std::move(snapshot);
+    }
+
 private:
     static asio::ip::tcp::endpoint makeSseEndpoint(const config::Config& cfg) {
         uint16_t port = cfg.telemetry.sse_port > 0
@@ -141,9 +149,25 @@ private:
             eventBus_.publish("heartbeat", nlohmann::json{
                 {"ts", dts::common::core::utc_now_iso8601_ms()}
             });
+            // Every kReadyReemitPeriod heartbeats, re-emit the last `ready`
+            // snapshot so late-joining SSE clients always find one in the
+            // ring buffer. Matches the lrf-control "publish state on every
+            // transition" pattern without coupling to radio_manager.
+            if (++heartbeatTicks_ % kReadyReemitPeriod == 0) {
+                std::optional<nlohmann::json> snap;
+                {
+                    std::lock_guard<std::mutex> lock(readyMutex_);
+                    snap = lastReadyPayload_;
+                }
+                if (snap) {
+                    eventBus_.publish("ready", *snap);
+                }
+            }
             scheduleHeartbeat();
         });
     }
+
+    static constexpr std::uint64_t kReadyReemitPeriod = 12;  // ~60s at 5s heartbeat
 
     asio::io_context& io_;
     std::string containerId_;
@@ -157,6 +181,10 @@ private:
     std::chrono::seconds heartbeatInterval_;
     asio::steady_timer heartbeatTimer_;
     std::atomic<bool> heartbeatStopped_{false};
+    std::uint64_t heartbeatTicks_{0};
+
+    std::mutex readyMutex_;
+    std::optional<nlohmann::json> lastReadyPayload_;
 };
 
 TelemetryHub::TelemetryHub(asio::io_context& io, const config::Config& cfg)
@@ -188,7 +216,9 @@ static std::string now_iso8601() {
 }
 
 void TelemetryHub::publishReady(nlohmann::json snapshot) {
-    impl_->publishEvent("ready", nlohmann::json{{"snapshot", std::move(snapshot)}});
+    nlohmann::json payload = {{"snapshot", std::move(snapshot)}};
+    impl_->rememberReadySnapshot(payload);
+    impl_->publishEvent("ready", std::move(payload));
 }
 
 void TelemetryHub::publishRadioState(const std::string& radioId,
