@@ -9,16 +9,14 @@ Authenticator::Authenticator(const config::SecurityConfig& config) {
 
     if (!config.token_secret.empty()) {
         validator_.emplace(config.token_secret);
-    } else {
-        allow_unauthenticated_viewer_  = true;
-        allow_unauthenticated_control_ = true;
-    }
-
-    if (allowed_roles_.empty()) {
-        allow_unauthenticated_viewer_ = true;
-    } else {
-        allow_unauthenticated_viewer_  = is_role_allowed("viewer");
-        allow_unauthenticated_control_ = is_role_allowed("controller");
+    } else if (config.allow_unauthenticated_dev_access) {
+        if (allowed_roles_.empty()) {
+            allow_unauthenticated_viewer_ = true;
+            allow_unauthenticated_control_ = true;
+        } else {
+            allow_unauthenticated_viewer_ = is_role_allowed("viewer");
+            allow_unauthenticated_control_ = is_role_allowed("controller");
+        }
     }
 }
 
@@ -31,17 +29,32 @@ AuthResult Authenticator::authorize(const dts::common::rest::HttpRequest& reques
         if (level == AccessLevel::Control && allow_unauthenticated_control_) {
             return {true, "anonymous", {}, {}};
         }
-        return {false, {}, "Authentication required", {}};
+        return {false,
+                {},
+                "Authentication required",
+                {},
+                401,
+                "UNAUTHORIZED"};
     }
 
     auto authHeader = header_value(request, "authorization");
     if (authHeader.empty()) {
-        return {false, {}, "Missing Authorization header", {}};
+        return {false,
+                {},
+                "Missing Authorization header",
+                {},
+                401,
+                "UNAUTHORIZED"};
     }
 
     const auto info = validator_->validate(std::string(authHeader));
     if (!info.valid) {
-        return {false, {}, "Invalid bearer token", {}};
+        return {false,
+                {},
+                "Invalid bearer token",
+                {},
+                401,
+                "UNAUTHORIZED"};
     }
 
     bool permitted = false;
@@ -52,13 +65,23 @@ AuthResult Authenticator::authorize(const dts::common::rest::HttpRequest& reques
     }
 
     if (!permitted) {
-        return {false, {}, "Insufficient scope", {}};
+        return {false,
+                {},
+                "Insufficient scope",
+                {},
+                403,
+                "FORBIDDEN"};
     }
 
     std::string_view requiredRole =
         (level == AccessLevel::Telemetry) ? "viewer" : "controller";
     if (!allowed_roles_.empty() && !is_role_allowed(requiredRole)) {
-        return {false, {}, "Role not permitted by configuration", {}};
+        return {false,
+                {},
+                "Role not permitted by configuration",
+                {},
+                403,
+                "FORBIDDEN"};
     }
 
     return {true, info.subject, {}, info.scope};

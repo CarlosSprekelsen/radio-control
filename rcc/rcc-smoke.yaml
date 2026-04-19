@@ -17,6 +17,7 @@ telemetry:
 
 security:
   token_secret: "dev-secret-for-smoke-testing"
+  allow_unauthenticated_dev_access: false
   allowed_roles:
     - viewer
     - controller

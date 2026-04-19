@@ -27,6 +27,7 @@ telemetry:
 
 security:
   token_secret: "unit-test-secret"
+  allow_unauthenticated_dev_access: false
   allowed_roles:
     - viewer
     - controller
@@ -64,6 +65,7 @@ TEST(ConfigManager, LoadsRequiredFields) {
     EXPECT_EQ(cfg.telemetry.sse_port,     9091);
     EXPECT_EQ(cfg.telemetry.event_buffer_size, 64u);
     EXPECT_EQ(cfg.security.token_secret,  "unit-test-secret");
+    EXPECT_FALSE(cfg.security.allow_unauthenticated_dev_access);
     ASSERT_EQ(cfg.radios.size(),          1u);
     EXPECT_EQ(cfg.radios[0].id,           "radio-1");
     EXPECT_EQ(cfg.radios[0].adapter,      "silvus");
@@ -102,6 +104,7 @@ telemetry:
   clientIdleTimeoutSec: 45
 security:
   token_secret: "shared-secret"
+  allow_unauthenticated_dev_access: true
 )yaml";
     const auto path = writeTmpYaml(yaml);
     rcc::config::ConfigManager mgr(path);
@@ -115,6 +118,7 @@ security:
     EXPECT_EQ(cfg.telemetry.event_retention, std::chrono::hours{2});
     EXPECT_EQ(cfg.telemetry.max_sse_clients, 6u);
     EXPECT_EQ(cfg.telemetry.client_idle_timeout, std::chrono::seconds{45});
+    EXPECT_TRUE(cfg.security.allow_unauthenticated_dev_access);
 }
 
 TEST(ConfigManager, LegacyKeysOverrideSharedAliasesAndPreserveHourUnits) {

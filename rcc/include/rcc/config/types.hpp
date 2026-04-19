@@ -24,6 +24,7 @@ struct TelemetryConfig {
 
 struct SecurityConfig {
     std::string token_secret;
+    bool allow_unauthenticated_dev_access{false};
     std::vector<std::string> allowed_roles;
     std::chrono::seconds token_ttl{std::chrono::seconds{300}};
 };

@@ -24,6 +24,8 @@ target_link_libraries(rcc-test-support
 target_compile_definitions(rcc-test-support
     PRIVATE DTS_INLINE_NAMESPACE=v1 ASIO_STANDALONE
 )
+enable_sanitizers(rcc-test-support)
+enable_thread_sanitizer(rcc-test-support)
 
 # Unit tests
 file(GLOB_RECURSE UNIT_TEST_SOURCES "unit/*.cpp")
@@ -36,6 +38,8 @@ foreach(test_file ${UNIT_TEST_SOURCES})
     )
     target_compile_definitions(${test_name} PRIVATE DTS_INLINE_NAMESPACE=v1 ASIO_STANDALONE)
     target_include_directories(${test_name} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+    enable_sanitizers(${test_name})
+    enable_thread_sanitizer(${test_name})
     add_test(NAME ${test_name} COMMAND ${test_name})
 endforeach()
 
@@ -50,5 +54,7 @@ foreach(test_file ${INTEGRATION_TEST_SOURCES})
     )
     target_compile_definitions(${test_name} PRIVATE DTS_INLINE_NAMESPACE=v1 ASIO_STANDALONE)
     target_include_directories(${test_name} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+    enable_sanitizers(${test_name})
+    enable_thread_sanitizer(${test_name})
     add_test(NAME ${test_name} COMMAND ${test_name})
 endforeach()

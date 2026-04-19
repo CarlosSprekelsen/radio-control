@@ -5,662 +5,1088 @@ namespace rcc::api {
 
 constexpr std::string_view RADIO_MONITOR_HTML = R"html(
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-  <title>Radio Control Console</title>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Radio Control Monitor</title>
   <style>
     :root {
-      --edge-accent: #ff4713;
-      --edge-accent-strong: #d73a10;
-      --edge-ink: #2f3944;
-      --edge-ink-muted: #5a6673;
-      --edge-surface: #ffffff;
-      --edge-surface-soft: #f4f6f8;
-      --edge-line: #cfd5dc;
-      --edge-bg: #f7f9fb;
-      --edge-shadow-soft: 0 10px 24px rgba(29, 35, 41, 0.08);
-    }
-
-    html, body {
-      height: 100%;
-      margin: 0;
+      --accent: #ff5a1f;
+      --accent-strong: #d94817;
+      --ink: #25303a;
+      --ink-soft: #61707d;
+      --surface: #ffffff;
+      --surface-soft: #f2f5f7;
+      --line: #ccd5dd;
+      --bg-top: #f8fafc;
+      --bg-bottom: #eef3f7;
+      --shadow: 0 16px 40px rgba(25, 35, 45, 0.08);
+      --ok: #2d8a42;
+      --warn: #b26a00;
+      --err: #c4382b;
     }
 
     body {
-      font-family: "Segoe UI", Arial, sans-serif;
-      background: var(--edge-bg);
-      color: var(--edge-ink);
-      padding: 20px;
-      display: flex;
-      flex-direction: column;
+      margin: 0;
+      font-family: "Barlow", "Segoe UI", Arial, sans-serif;
+      color: var(--ink);
+      background:
+        radial-gradient(circle at top left, rgba(255, 90, 31, 0.08), transparent 34%),
+        linear-gradient(180deg, var(--bg-top), var(--bg-bottom));
+      min-height: 100vh;
     }
 
-    .brand-header {
-      display: flex;
+    .shell {
+      max-width: 1280px;
+      margin: 0 auto;
+      padding: 24px;
+    }
+
+    .hero {
+      display: grid;
+      grid-template-columns: minmax(0, 1.35fr) minmax(320px, 0.9fr);
+      gap: 18px;
+      margin-bottom: 18px;
+    }
+
+    .hero-card,
+    .panel {
+      background: rgba(255, 255, 255, 0.94);
+      border: 1px solid rgba(204, 213, 221, 0.85);
+      border-radius: 18px;
+      box-shadow: var(--shadow);
+      backdrop-filter: blur(10px);
+    }
+
+    .hero-card {
+      padding: 20px 22px;
+    }
+
+    .hero-kicker {
+      display: inline-flex;
       align-items: center;
-      gap: 14px;
-      margin-bottom: 14px;
-      flex-wrap: wrap;
-    }
-
-    .brand-logo {
-      height: 28px;
-      width: auto;
-      object-fit: contain;
+      gap: 8px;
+      font-size: 0.82rem;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--accent);
+      font-weight: 700;
+      margin-bottom: 10px;
     }
 
     h1 {
+      margin: 0 0 10px;
+      font-size: clamp(1.8rem, 2vw, 2.5rem);
+      line-height: 1.05;
+    }
+
+    .hero-copy {
       margin: 0;
-      color: var(--edge-ink);
-      font-size: 1.35rem;
+      color: var(--ink-soft);
+      font-size: 1rem;
+      max-width: 56ch;
     }
 
-    h2 {
-      margin: 20px 0 10px;
-      color: var(--edge-ink);
-      font-size: 1.05rem;
-    }
-
-    .tabs {
-      display: flex;
-      border-bottom: 1px solid var(--edge-line);
-      margin-bottom: 15px;
-      gap: 4px;
-      flex-wrap: wrap;
-    }
-
-    .tab {
-      padding: 10px 14px;
-      cursor: pointer;
-      background: var(--edge-surface-soft);
-      border-radius: 6px 6px 0 0;
-      transition: 0.2s;
-      border: 1px solid var(--edge-line);
-      border-bottom: none;
-      color: var(--edge-ink);
-    }
-
-    .tab:hover { background: #edf2f6; }
-
-    .tab.active {
-      background: var(--edge-surface);
-      color: var(--edge-accent);
-      box-shadow: inset 0 2px 0 var(--edge-accent);
-      font-weight: 600;
-    }
-
-    .tab-content {
-      display: none;
-      flex: 1;
-      flex-direction: column;
-      overflow: hidden;
-    }
-
-    .tab-content.active { display: flex; }
-
-    .section { margin-bottom: 20px; }
-
-    .row {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 8px;
-      align-items: center;
-      margin-bottom: 10px;
-    }
-
-    .grid-2 {
+    .identity-grid,
+    .state-grid {
       display: grid;
-      grid-template-columns: repeat(2, 1fr);
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 12px;
+    }
+
+    .metric {
+      padding: 12px 14px;
+      border-radius: 14px;
+      background: var(--surface-soft);
+      border: 1px solid var(--line);
+    }
+
+    .metric-label {
+      display: block;
+      font-size: 0.8rem;
+      color: var(--ink-soft);
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      margin-bottom: 6px;
+    }
+
+    .metric-value {
+      font-size: 1.02rem;
+      font-weight: 700;
+      word-break: break-word;
+    }
+
+    .layout {
+      display: grid;
+      grid-template-columns: minmax(0, 0.95fr) minmax(0, 1.05fr);
+      gap: 18px;
+      align-items: start;
+    }
+
+    .panel {
+      padding: 18px;
+    }
+
+    .panel h2 {
+      margin: 0 0 12px;
+      font-size: 1.05rem;
+      letter-spacing: 0.02em;
+    }
+
+    .stack {
+      display: grid;
+      gap: 14px;
+    }
+
+    .control-row,
+    .button-row {
+      display: flex;
       gap: 10px;
+      flex-wrap: wrap;
+      align-items: center;
     }
 
-    select, button, input {
-      padding: 8px 10px;
-      font-family: "Segoe UI", Arial, sans-serif;
-      border-radius: 6px;
-      font-size: 0.92rem;
+    label {
+      display: block;
+      font-size: 0.82rem;
+      font-weight: 700;
+      color: var(--ink-soft);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      margin-bottom: 6px;
     }
 
-    input, select {
-      background: var(--edge-surface);
-      color: var(--edge-ink);
-      border: 1px solid var(--edge-line);
+    input,
+    select,
+    button,
+    textarea {
+      font: inherit;
+      border-radius: 12px;
+    }
+
+    input,
+    select,
+    textarea {
+      width: 100%;
+      box-sizing: border-box;
+      padding: 10px 12px;
+      border: 1px solid var(--line);
+      background: var(--surface);
+      color: var(--ink);
     }
 
     button {
-      background: var(--edge-accent);
-      color: white;
-      border: 1px solid var(--edge-accent);
+      border: 1px solid var(--accent);
+      background: var(--accent);
+      color: #fff;
+      padding: 10px 14px;
+      font-weight: 700;
       cursor: pointer;
-      transition: 0.2s;
+      transition: transform 0.16s ease, background 0.16s ease, border-color 0.16s ease;
     }
 
-    button:hover { background: var(--edge-accent-strong); border-color: var(--edge-accent-strong); }
+    button:hover {
+      transform: translateY(-1px);
+      background: var(--accent-strong);
+      border-color: var(--accent-strong);
+    }
+
+    button.secondary {
+      background: var(--surface);
+      color: var(--ink);
+      border-color: var(--line);
+    }
+
+    button.secondary:hover {
+      background: var(--surface-soft);
+      border-color: var(--ink-soft);
+    }
 
     button:disabled {
-      background: #c8cfd7 !important;
-      border-color: #c8cfd7 !important;
-      color: #7e8791 !important;
       cursor: not-allowed;
+      opacity: 0.55;
+      transform: none;
     }
 
-    button.btn-secondary {
-      background: #4ec9b0;
-      border-color: #3ab09c;
-    }
-    button.btn-secondary:hover { background: #3ab09c; border-color: #2d9080; }
-
-    .card {
-      background: var(--edge-surface);
-      padding: 12px;
-      border-radius: 8px;
-      border: 1px solid var(--edge-line);
-      box-shadow: var(--edge-shadow-soft);
-      margin-bottom: 10px;
-    }
-
-    .service-identity {
+    .state-grid {
       margin-bottom: 14px;
     }
 
-    .status-grid {
+    .state-list {
       display: grid;
-      grid-template-columns: repeat(2, 1fr);
-      gap: 8px 20px;
+      gap: 10px;
     }
 
-    .label { color: var(--edge-ink-muted); }
-    .value { color: var(--edge-ink); font-weight: 500; }
-
-    .console {
-      background: var(--edge-surface-soft);
-      padding: 12px;
-      flex: 1;
-      overflow-y: auto;
-      font-size: 12px;
-      border-radius: 8px;
-      border: 1px solid var(--edge-line);
-      color: var(--edge-ink);
-      min-height: 120px;
+    .state-row {
+      display: grid;
+      grid-template-columns: 140px minmax(0, 1fr);
+      gap: 12px;
+      align-items: start;
+      padding: 10px 12px;
+      border-radius: 12px;
+      background: var(--surface-soft);
+      border: 1px solid var(--line);
     }
 
-    .ok, .connected { color: #2e7d32; }
-    .err, .disconnected { color: #c62828; }
-    .warn { color: #b26a00; }
+    .state-row dt {
+      margin: 0;
+      font-size: 0.82rem;
+      color: var(--ink-soft);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      font-weight: 700;
+    }
+
+    .state-row dd {
+      margin: 0;
+      font-weight: 600;
+      word-break: break-word;
+    }
 
     .badge {
-      display: inline-block;
-      padding: 2px 8px;
-      border-radius: 10px;
-      font-size: 0.78rem;
-      font-weight: 600;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      border-radius: 999px;
+      padding: 6px 10px;
+      font-size: 0.82rem;
+      font-weight: 700;
+      border: 1px solid transparent;
     }
-    .badge-ready   { background: #e8f5e9; color: #2e7d32; }
-    .badge-offline { background: #ffebee; color: #c62828; }
-    .badge-busy    { background: #fff8e1; color: #b26a00; }
-    .badge-recovering { background: #fff3e0; color: #e65100; }
-    .badge-discovering { background: #e3f2fd; color: #1565c0; }
 
-    @media (max-width: 900px) {
-      .grid-2, .status-grid { grid-template-columns: 1fr; }
-      .brand-logo { height: 24px; }
+    .badge-online {
+      color: var(--ok);
+      background: rgba(45, 138, 66, 0.1);
+      border-color: rgba(45, 138, 66, 0.2);
+    }
+
+    .badge-recovering {
+      color: var(--warn);
+      background: rgba(178, 106, 0, 0.12);
+      border-color: rgba(178, 106, 0, 0.18);
+    }
+
+    .badge-offline {
+      color: var(--err);
+      background: rgba(196, 56, 43, 0.1);
+      border-color: rgba(196, 56, 43, 0.16);
+    }
+
+    .hint {
+      color: var(--ink-soft);
+      font-size: 0.92rem;
+      margin: 0;
+    }
+
+    .inline-note {
+      font-size: 0.86rem;
+      color: var(--ink-soft);
+    }
+
+    .filter-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px 14px;
+      margin: 10px 0 4px;
+    }
+
+    .filter-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 10px;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      background: var(--surface-soft);
+      font-size: 0.86rem;
+    }
+
+    .filter-chip input {
+      width: auto;
+      margin: 0;
+      padding: 0;
+    }
+
+    .console {
+      min-height: 260px;
+      max-height: 560px;
+      overflow: auto;
+      padding: 12px;
+      border-radius: 16px;
+      background:
+        linear-gradient(180deg, rgba(37, 48, 58, 0.97), rgba(20, 28, 35, 0.98));
+      color: #edf3f8;
+      border: 1px solid rgba(37, 48, 58, 0.12);
+      font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+      font-size: 0.82rem;
+      line-height: 1.45;
+      box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+    }
+
+    .log-line {
+      margin-bottom: 6px;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+
+    .log-info { color: #b8d1e2; }
+    .log-ok { color: #84d7a8; }
+    .log-warn { color: #f0c36d; }
+    .log-error { color: #ff9f93; }
+
+    .event-card {
+      border-left: 3px solid var(--accent);
+      padding: 10px 12px;
+      border-radius: 12px;
+      background: rgba(255, 255, 255, 0.05);
+      margin-bottom: 10px;
+    }
+
+    .event-header {
+      display: flex;
+      justify-content: space-between;
+      gap: 8px;
+      margin-bottom: 6px;
+      color: #fff;
+      font-weight: 700;
+    }
+
+    .event-meta {
+      color: #a8bac9;
+      font-size: 0.78rem;
+    }
+
+    .event-payload {
+      margin: 0;
+      white-space: pre-wrap;
+      word-break: break-word;
+      color: #d9e7f2;
+    }
+
+    @media (max-width: 980px) {
+      .hero,
+      .layout,
+      .identity-grid,
+      .state-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .state-row {
+        grid-template-columns: 1fr;
+      }
     }
   </style>
 </head>
 <body>
-
-<div class="brand-header">
-  <img class="brand-logo" src="data:image/svg+xml;base64,PHN2ZyB2ZXJzaW9uPSIxLjIiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyIgdmlld0JveD0iMCAwIDYyNSAxNzAiPgo8cGF0aCBmaWxsPSIjRTk0QTI2IiBjbGFzcz0iYSIgZD0ibTYyNC4zIDAuOHYyNS45aC04OC44di0yNS45eiIvPgo8cGF0aCBmaWxsPSIjNEI1MDU1IiBjbGFzcz0iYiIgZD0ibTQ1LjIgMTI3LjVsLTEyLjMgMTMuMnYyOS4yaC0zMi43di0xMTYuN2gzMi43djQ4LjVsNDUuMi00OC41aDM2LjNsLTQ3LjcgNTEuNyA1MC4yIDY1aC0zOC4zeiIvPgo8cGF0aCBmaWxsPSIjNEI1MDU1IiBmaWxsLXJ1bGU9ImV2ZW5vZGQiIGNsYXNzPSJiIiBkPSJtMjE3LjQgMTQ3LjNoLTQ5LjRsLTkuMSAyMi42aC0zMy43bDUxLjUtMTE2LjFoMzIuNWw1MS43IDExNi4xaC0zNC40em0tOS42LTI0LjJsLTE1LTM3LjItMTUgMzcuMnoiLz4KPHBhdGggZmlsbD0iIzRCNTA1NSIgY2xhc3M9ImIiIGQ9Im0yODYuOCA3OS40aC0zNS45di0yNi4yaDEwNC42djI2LjJoLTM1Ljd2OTAuNWgtMzN6Ii8+CjxwYXRoIGZpbGw9IiM0QjUwNTUiIGNsYXNzPSJiIiBkPSJtMzc2LjEgNTMuMmgzM3YxMTYuN2gtMzN6Ii8+CjxwYXRoIGZpbGw9IiM0QjUwNTUiIGNsYXNzPSJiIiBkPSJtNTQ2LjMgMTY5LjlsLTAuMy02MS45LTMwIDUwLjRoLTE0LjdsLTI5LjgtNDguN3Y2MC4yaC0zMC41di0xMTYuN2gyNy4ybDQxIDY3LjMgNDAtNjcuM2gyNy4xbDAuNCAxMTYuN3oiLz4KPC9zdmc+Cg==" alt="KATIM logo" />
-  <h1>Radio Control Console</h1>
-</div>
-
-<div class="card service-identity">
-  <div class="status-grid">
-    <div><span class="label">Service:</span> <span id="serviceName" class="value">Loading...</span></div>
-    <div><span class="label">Version:</span> <span id="serviceVersion" class="value">Loading...</span></div>
-    <div><span class="label">Git Version:</span> <span id="serviceGitVersion" class="value">Loading...</span></div>
-    <div><span class="label">Build Date:</span> <span id="serviceBuildDate" class="value">Loading...</span></div>
-  </div>
-</div>
-
-<div class="tabs">
-  <div class="tab active" onclick="showTab('radioTab')">Radio Control</div>
-  <div class="tab" onclick="showTab('sseTab')">SSE Events</div>
-</div>
-
-<!-- ================== RADIO CONTROL TAB ================== -->
-<div id="radioTab" class="tab-content active">
-
-  <h2>Radio Selection</h2>
-  <div class="card">
-    <div class="row">
-      <select id="radioSel" onchange="onRadioSelected()" style="flex:1;max-width:320px;"></select>
-      <button class="btn-secondary" onclick="loadRadios()">Refresh</button>
-      <button onclick="connectRadio()">Connect</button>
-    </div>
-    <div class="row">
-      <label class="label">Bearer Token:</label>
-      <input type="text" id="apiToken" placeholder="paste JWT for control commands..."
-             style="flex:1;min-width:200px;" oninput="onTokenChange()">
-    </div>
-  </div>
-
-  <h2>Current State</h2>
-  <div class="card status-grid" id="stateCard">
-    <div><span class="label">Status:</span> <span id="stStatus" class="value">-</span></div>
-    <div><span class="label">Channel Index:</span> <span id="stChannel" class="value">-</span></div>
-    <div><span class="label">Power (W):</span> <span id="stPower" class="value">-</span></div>
-    <div><span class="label">Active radio:</span> <span id="stActive" class="value">-</span></div>
-    <div><span class="label">Frequencies (MHz):</span> <span id="stFreqs" class="value">-</span></div>
-    <div><span class="label">Power Range (W):</span> <span id="stPwrRange" class="value">-</span></div>
-  </div>
-
-  <div class="grid-2">
-    <div>
-      <h2>Set Channel</h2>
-      <div class="card">
-        <div class="row">
-          <select id="chanSel" style="flex:1;max-width:280px;"></select>
-          <button onclick="setChannel()">Set Channel</button>
+<div class="shell">
+  <section class="hero">
+    <article class="hero-card">
+      <div class="hero-kicker">EDGE RCC</div>
+      <h1>Radio Control Monitor</h1>
+      <p class="hero-copy">
+        Field-facing diagnostics for radio selection, channel and power control,
+        and the live SSE stream exposed by the RCC C++ service.
+      </p>
+    </article>
+    <article class="hero-card">
+      <div class="identity-grid">
+        <div class="metric">
+          <span class="metric-label">Service</span>
+          <span id="serviceName" class="metric-value">radio-control</span>
+        </div>
+        <div class="metric">
+          <span class="metric-label">Health</span>
+          <span id="serviceHealth" class="metric-value">Loading...</span>
+        </div>
+        <div class="metric">
+          <span class="metric-label">Container Version</span>
+          <span id="serviceVersion" class="metric-value">Loading...</span>
+        </div>
+        <div class="metric">
+          <span class="metric-label">Git Version</span>
+          <span id="serviceGitVersion" class="metric-value">Loading...</span>
+        </div>
+        <div class="metric">
+          <span class="metric-label">Build Time</span>
+          <span id="serviceBuildDate" class="metric-value">Loading...</span>
+        </div>
+        <div class="metric">
+          <span class="metric-label">Schema</span>
+          <span id="serviceSchema" class="metric-value">Loading...</span>
         </div>
       </div>
-    </div>
-    <div>
-      <h2>Set Power</h2>
-      <div class="card">
-        <div class="row">
-          <label class="label">Power (W):</label>
-          <input type="number" id="pwrWatts" value="1.0" step="0.1" min="0.0" style="width:80px;">
-          <button onclick="setPower()">Set Power</button>
+    </article>
+  </section>
+
+  <section class="layout">
+    <article class="panel stack">
+      <div>
+        <h2>Control Surface</h2>
+        <p class="hint">
+          REST commands target the RCC `/api/v1` contract directly. When auth is enabled,
+          paste a bearer token or use the bench-only dev token helper.
+        </p>
+      </div>
+
+      <div>
+        <label for="apiToken">Bearer Token</label>
+        <input id="apiToken" type="text" placeholder="JWT for /api/v1/radios, /power, /channel" />
+      </div>
+
+      <div class="button-row">
+        <button class="secondary" type="button" onclick="fetchDevToken()">Fetch Dev Token</button>
+        <button class="secondary" type="button" onclick="loadServiceIdentity()">Refresh Health</button>
+        <button class="secondary" type="button" onclick="loadRadios()">Refresh Radios</button>
+      </div>
+
+      <div>
+        <label for="radioSel">Known Radios</label>
+        <div class="control-row">
+          <select id="radioSel" style="flex: 1 1 280px;" onchange="onRadioSelected()"></select>
+          <button type="button" onclick="selectRadio()">Select Active</button>
         </div>
       </div>
-    </div>
-  </div>
 
-  <h2>API Console</h2>
-  <div class="console" id="radioConsole" style="min-height:160px;"></div>
+      <div class="state-grid">
+        <div class="metric">
+          <span class="metric-label">Selected Radio</span>
+          <span id="selectedRadioId" class="metric-value">-</span>
+        </div>
+        <div class="metric">
+          <span class="metric-label">Active Radio</span>
+          <span id="activeRadioId" class="metric-value">-</span>
+        </div>
+        <div class="metric">
+          <span class="metric-label">Status</span>
+          <span id="radioStatus" class="metric-value">-</span>
+        </div>
+        <div class="metric">
+          <span class="metric-label">Derived Channel</span>
+          <span id="radioChannelIndex" class="metric-value">-</span>
+        </div>
+      </div>
+
+      <dl class="state-list">
+        <div class="state-row">
+          <dt>Frequency</dt>
+          <dd id="radioFrequency">-</dd>
+        </div>
+        <div class="state-row">
+          <dt>Power</dt>
+          <dd id="radioPower">-</dd>
+        </div>
+        <div class="state-row">
+          <dt>Power Range</dt>
+          <dd id="radioPowerRange">-</dd>
+        </div>
+        <div class="state-row">
+          <dt>Supported Channels</dt>
+          <dd id="radioChannels">-</dd>
+        </div>
+      </dl>
+
+      <div class="control-row">
+        <div style="flex: 1 1 280px;">
+          <label for="chanSel">Set Channel</label>
+          <select id="chanSel"></select>
+        </div>
+        <div style="align-self: end;">
+          <button type="button" onclick="setChannel()">POST /radios/{id}/channel</button>
+        </div>
+      </div>
+
+      <div class="control-row">
+        <div style="flex: 1 1 220px;">
+          <label for="pwrDbm">Set Power (dBm)</label>
+          <input id="pwrDbm" type="number" min="0" max="39" step="1" value="10" />
+        </div>
+        <div style="align-self: end;">
+          <button type="button" onclick="setPower()">POST /radios/{id}/power</button>
+        </div>
+      </div>
+
+      <div>
+        <h2>REST Activity</h2>
+        <div id="radioConsole" class="console"></div>
+      </div>
+    </article>
+
+    <article class="panel stack">
+      <div>
+        <h2>Telemetry Stream</h2>
+        <p class="hint">
+          Watches the SSE v1 stream with `ready`, `state`, `channelChanged`, `powerChanged`,
+          `fault`, and `heartbeat`, and stores `Last-Event-ID` in localStorage for resume.
+        </p>
+      </div>
+
+      <div>
+        <label for="sseUrl">SSE URL</label>
+        <input id="sseUrl" type="text" />
+      </div>
+
+      <div>
+        <label for="sseToken">SSE Bearer Token</label>
+        <input id="sseToken" type="text" placeholder="If blank, connect without Authorization header" />
+      </div>
+
+      <div class="control-row">
+        <div style="flex: 1 1 220px;">
+          <label>Connection</label>
+          <div id="sseStatus" class="badge badge-offline">Disconnected</div>
+        </div>
+        <div style="flex: 1 1 220px;">
+          <label>Last Event ID</label>
+          <div id="lastEventId" class="inline-note">none</div>
+        </div>
+        <div style="flex: 1 1 220px;">
+          <label>Event Count</label>
+          <div id="eventCount" class="inline-note">0</div>
+        </div>
+      </div>
+
+      <div class="button-row">
+        <button id="connectBtn" type="button" onclick="connectSse()">Connect SSE</button>
+        <button id="disconnectBtn" class="secondary" type="button" onclick="disconnectSse()" disabled>Disconnect</button>
+        <button id="clearEventsBtn" class="secondary" type="button" onclick="clearSseEvents()">Clear Console</button>
+        <button id="resetResumeBtn" class="secondary" type="button" onclick="resetResumeState()">Reset Resume</button>
+      </div>
+
+      <div>
+        <label>Event Filters</label>
+        <div class="filter-row">
+          <label class="filter-chip"><input class="event-filter" type="checkbox" value="ready" checked />ready</label>
+          <label class="filter-chip"><input class="event-filter" type="checkbox" value="state" checked />state</label>
+          <label class="filter-chip"><input class="event-filter" type="checkbox" value="channelChanged" checked />channelChanged</label>
+          <label class="filter-chip"><input class="event-filter" type="checkbox" value="powerChanged" checked />powerChanged</label>
+          <label class="filter-chip"><input class="event-filter" type="checkbox" value="fault" checked />fault</label>
+          <label class="filter-chip"><input class="event-filter" type="checkbox" value="heartbeat" checked />heartbeat</label>
+          <label class="filter-chip"><input class="event-filter" type="checkbox" value="SYSTEM" checked />SYSTEM</label>
+          <label class="filter-chip"><input class="event-filter" type="checkbox" value="ERROR" checked />ERROR</label>
+        </div>
+      </div>
+
+      <div>
+        <h2>Event Console</h2>
+        <div id="sseConsole" class="console"></div>
+      </div>
+    </article>
+  </section>
 </div>
-
-<!-- ================== SSE EVENTS TAB ================== -->
-<div id="sseTab" class="tab-content">
-  <h2>Event Console (SSE)</h2>
-  <div class="card" style="margin-bottom:10px;">
-    <div class="row">
-      <input type="text" id="sseUrl" style="flex:1;min-width:240px;">
-      <input type="text" id="sseToken" placeholder="Bearer token" style="flex:1;min-width:180px;">
-      <button id="btnConnect" onclick="connect()">Connect</button>
-      <button id="btnDisconnect" onclick="disconnect()" disabled>Disconnect</button>
-      <button onclick="clearEvents()">Clear</button>
-    </div>
-    <div class="row">
-      <span id="sseStatus" class="disconnected">● Disconnected</span>
-      <span id="counter" style="color:var(--edge-ink-muted);">Events: 0</span>
-    </div>
-  </div>
-
-  <div class="card" style="margin-bottom:10px;">
-    <strong>Filters:</strong>
-    <div style="margin-top:6px;display:flex;flex-wrap:wrap;gap:10px;">
-      <label><input type="checkbox" class="event-filter" value="rcc.ready" checked> rcc.ready</label>
-      <label><input type="checkbox" class="event-filter" value="rcc.radio.state" checked> rcc.radio.state</label>
-      <label><input type="checkbox" class="event-filter" value="rcc.radio.channel" checked> rcc.radio.channel</label>
-      <label><input type="checkbox" class="event-filter" value="rcc.radio.power" checked> rcc.radio.power</label>
-      <label><input type="checkbox" class="event-filter" value="rcc.fault" checked> rcc.fault</label>
-      <label><input type="checkbox" class="event-filter" value="SYSTEM" checked> SYSTEM</label>
-      <label><input type="checkbox" class="event-filter" value="ERROR" checked> ERROR</label>
-    </div>
-  </div>
-
-  <div class="console" id="sseConsole" style="flex:1;min-height:300px;"></div>
-</div>
-
 <script>
-/* =====================================================
-   Globals
-===================================================== */
 const API_BASE = "/api/v1";
+const LAST_EVENT_ID_KEY = "rcc.monitor.lastEventId";
 let globalToken = "";
 let radiosCache = [];
+let sseController = null;
+let eventCount = 0;
+let lastEventId = window.localStorage.getItem(LAST_EVENT_ID_KEY) || "";
+let activeRadioId = null;
+const eventFilters = new Set();
 
-function updateServiceIdentity(identity) {
-  document.getElementById("serviceName").textContent = identity?.service ?? "Unknown";
-  document.getElementById("serviceVersion").textContent = identity?.version ?? "-";
-  document.getElementById("serviceGitVersion").textContent = identity?.gitVersion ?? "-";
-  document.getElementById("serviceBuildDate").textContent = identity?.buildDate ?? "-";
-}
-
-async function loadServiceIdentity() {
-  try {
-    const res = await fetch(API_BASE + "/health");
-    const json = await res.json();
-    if (json.result !== "ok" || !json.data) {
-      throw new Error(json.message ?? "unexpected response");
-    }
-    updateServiceIdentity(json.data);
-  } catch (e) {
-    document.getElementById("serviceBuildDate").textContent = "Unavailable";
-    radioLog("Service identity unavailable: " + e.message, "warn");
-  }
+function setToken(value) {
+  globalToken = value.trim();
+  document.getElementById("apiToken").value = globalToken;
+  document.getElementById("sseToken").value = globalToken;
 }
 
 function apiHeaders(includeBody = false) {
-  const h = {};
-  if (globalToken) h["Authorization"] = "Bearer " + globalToken;
-  if (includeBody) h["Content-Type"] = "application/json";
-  return h;
+  const headers = {};
+  if (globalToken) {
+    headers["Authorization"] = "Bearer " + globalToken;
+  }
+  if (includeBody) {
+    headers["Content-Type"] = "application/json";
+  }
+  return headers;
 }
 
 function selectedRadioId() {
   return document.getElementById("radioSel").value;
 }
 
-function onTokenChange() {
-  globalToken = document.getElementById("apiToken").value.trim();
-  // Sync token field to SSE tab
-  document.getElementById("sseToken").value = globalToken;
-}
-
-function showTab(tabId) {
-  document.querySelectorAll(".tab-content").forEach(tc => tc.classList.remove("active"));
-  document.querySelectorAll(".tab").forEach(t => t.classList.remove("active"));
-  document.getElementById(tabId).classList.add("active");
-  document.querySelector(`.tab[onclick*="${tabId}"]`).classList.add("active");
-}
-
-/* =====================================================
-   Radio console logger
-===================================================== */
-function radioLog(msg, type = "ok") {
-  const div = document.getElementById("radioConsole");
+function logLine(targetId, message, level = "info") {
+  const target = document.getElementById(targetId);
   const line = document.createElement("div");
-  line.className = type;
-  line.style.fontSize = "11px";
-  line.style.marginBottom = "2px";
-  const time = new Date().toISOString().split("T")[1].substring(0, 12);
-  line.textContent = time + " | " + msg;
-  div.appendChild(line);
-  div.scrollTop = div.scrollHeight;
+  line.className = "log-line log-" + level;
+  line.textContent = new Date().toISOString() + " | " + message;
+  target.appendChild(line);
+  target.scrollTop = target.scrollHeight;
 }
 
-/* =====================================================
-   Radio state display
-===================================================== */
-function statusBadge(status) {
-  const cls = {
-    ready: "badge-ready",
-    offline: "badge-offline",
-    busy: "badge-busy",
-    recovering: "badge-recovering",
-    discovering: "badge-discovering"
-  }[status] || "badge-offline";
-  return `<span class="badge ${cls}">${status}</span>`;
-}
-
-function updateStateDisplay(radio) {
-  if (!radio) {
-    ["stStatus","stChannel","stPower","stActive","stFreqs","stPwrRange"].forEach(id => {
-      document.getElementById(id).textContent = "-";
-    });
-    return;
+function formatNullable(value, suffix = "") {
+  if (value === null || value === undefined || value === "") {
+    return "-";
   }
-  document.getElementById("stStatus").innerHTML = statusBadge(radio.status ?? "offline");
-  document.getElementById("stChannel").textContent = radio.channelIndex ?? "-";
-  document.getElementById("stPower").textContent =
-    radio.powerWatts != null ? radio.powerWatts.toFixed(2) + " W" : "-";
-  document.getElementById("stActive").textContent = radio.isActive ? "Yes" : "No";
+  return String(value) + suffix;
+}
 
-  const cap = radio.capabilities ?? {};
-  document.getElementById("stFreqs").textContent =
-    (cap.frequenciesMhz ?? []).join(", ") || "-";
-  const pr = cap.powerRangeWatts;
-  document.getElementById("stPwrRange").textContent =
-    pr ? `${pr.min} – ${pr.max} W` : "-";
+function statusBadge(status) {
+  const normalized = status || "offline";
+  const css = normalized === "online"
+    ? "badge-online"
+    : normalized === "recovering"
+    ? "badge-recovering"
+    : "badge-offline";
+  return `<span class="badge ${css}">${normalized}</span>`;
+}
+
+function deriveChannelIndex(radio) {
+  if (!radio) return null;
+  if (radio.state && Number.isInteger(radio.state.channelIndex)) {
+    return radio.state.channelIndex;
+  }
+  const frequency = radio.state?.frequencyMhz;
+  const channels = radio.capabilities?.channels || [];
+  if (frequency === null || frequency === undefined) {
+    return null;
+  }
+  const match = channels.find((channel) => Math.abs(channel.frequencyMhz - frequency) < 0.001);
+  return match ? match.index : null;
 }
 
 function populateChannelDropdown(radio) {
-  const sel = document.getElementById("chanSel");
-  sel.innerHTML = "";
-  if (!radio) return;
-  const freqs = radio.capabilities?.frequenciesMhz ?? [];
-  if (freqs.length === 0) {
-    const opt = document.createElement("option");
-    opt.textContent = "No channels available";
-    sel.appendChild(opt);
+  const select = document.getElementById("chanSel");
+  select.innerHTML = "";
+
+  if (!radio || !(radio.capabilities?.channels || []).length) {
+    const option = document.createElement("option");
+    option.textContent = "No supported channels";
+    option.value = "";
+    select.appendChild(option);
     return;
   }
-  freqs.forEach((freq, idx) => {
-    const opt = document.createElement("option");
-    opt.value = idx;
-    opt.dataset.freq = freq;
-    opt.textContent = `Ch ${idx} \u2014 ${freq} MHz`;
-    sel.appendChild(opt);
+
+  radio.capabilities.channels.forEach((channel) => {
+    const option = document.createElement("option");
+    option.value = String(channel.index);
+    option.textContent = `Ch ${channel.index} | ${channel.frequencyMhz} MHz`;
+    select.appendChild(option);
   });
-  if (radio.channelIndex != null) sel.value = radio.channelIndex;
+
+  const selectedIndex = deriveChannelIndex(radio);
+  if (selectedIndex !== null) {
+    select.value = String(selectedIndex);
+  }
+}
+
+function renderRadioState(radio) {
+  document.getElementById("selectedRadioId").textContent = selectedRadioId() || "-";
+  document.getElementById("activeRadioId").textContent = activeRadioId || "-";
+
+  if (!radio) {
+    document.getElementById("radioStatus").textContent = "-";
+    document.getElementById("radioChannelIndex").textContent = "-";
+    document.getElementById("radioFrequency").textContent = "-";
+    document.getElementById("radioPower").textContent = "-";
+    document.getElementById("radioPowerRange").textContent = "-";
+    document.getElementById("radioChannels").textContent = "-";
+    populateChannelDropdown(null);
+    return;
+  }
+
+  const derivedIndex = deriveChannelIndex(radio);
+  const channels = radio.capabilities?.channels || [];
+  const powerMin = radio.capabilities?.minPowerDbm;
+  const powerMax = radio.capabilities?.maxPowerDbm;
+
+  document.getElementById("radioStatus").innerHTML = statusBadge(radio.status || "offline");
+  document.getElementById("radioChannelIndex").textContent =
+    derivedIndex === null ? "unknown" : "Ch " + derivedIndex;
+  document.getElementById("radioFrequency").textContent =
+    formatNullable(radio.state?.frequencyMhz, " MHz");
+  document.getElementById("radioPower").textContent =
+    formatNullable(radio.state?.powerDbm, " dBm");
+  document.getElementById("radioPowerRange").textContent =
+    powerMin === undefined || powerMax === undefined
+      ? "-"
+      : `${powerMin} .. ${powerMax} dBm`;
+  document.getElementById("radioChannels").textContent =
+    channels.length
+      ? channels.map((channel) => `Ch ${channel.index} (${channel.frequencyMhz} MHz)`).join(", ")
+      : "-";
+
+  populateChannelDropdown(radio);
+}
+
+function applyReadySnapshot(snapshot) {
+  if (!snapshot || !Array.isArray(snapshot.radios)) {
+    return;
+  }
+  activeRadioId = snapshot.activeRadioId || activeRadioId;
+  snapshot.radios.forEach((incoming) => {
+    const existing = radiosCache.find((radio) => radio.id === incoming.id);
+    if (!existing) {
+      radiosCache.push({
+        id: incoming.id,
+        model: incoming.model,
+        status: incoming.status,
+        capabilities: { channels: [] },
+        state: incoming.state || {}
+      });
+      return;
+    }
+    existing.model = incoming.model || existing.model;
+    existing.status = incoming.status || existing.status;
+    existing.state = { ...(existing.state || {}), ...(incoming.state || {}) };
+  });
+  refreshRadioDropdown();
+}
+
+function applyTelemetryEvent(tag, payload) {
+  if (!payload || typeof payload !== "object") {
+    return;
+  }
+
+  if (tag === "ready") {
+    applyReadySnapshot(payload.snapshot);
+    return;
+  }
+
+  const radioId = payload.radioId;
+  if (!radioId) {
+    return;
+  }
+
+  let radio = radiosCache.find((item) => item.id === radioId);
+  if (!radio) {
+    radio = {
+      id: radioId,
+      model: radioId,
+      status: "offline",
+      capabilities: { channels: [] },
+      state: {}
+    };
+    radiosCache.push(radio);
+  }
+
+  if (!radio.state) {
+    radio.state = {};
+  }
+
+  if (tag === "state") {
+    radio.status = payload.status || radio.status;
+    if (payload.frequencyMhz !== undefined) {
+      radio.state.frequencyMhz = payload.frequencyMhz;
+    }
+    if (payload.powerDbm !== undefined) {
+      radio.state.powerDbm = payload.powerDbm;
+    }
+    if (payload.channelIndex !== undefined) {
+      radio.state.channelIndex = payload.channelIndex;
+    }
+  } else if (tag === "channelChanged") {
+    if (payload.frequencyMhz !== undefined) {
+      radio.state.frequencyMhz = payload.frequencyMhz;
+    }
+    if (payload.channelIndex !== undefined) {
+      radio.state.channelIndex = payload.channelIndex;
+    }
+  } else if (tag === "powerChanged") {
+    if (payload.powerDbm !== undefined) {
+      radio.state.powerDbm = payload.powerDbm;
+    }
+  }
+
+  refreshRadioDropdown();
+}
+
+function refreshRadioDropdown() {
+  const select = document.getElementById("radioSel");
+  const previous = select.value;
+  select.innerHTML = "";
+
+  if (!radiosCache.length) {
+    const option = document.createElement("option");
+    option.value = "";
+    option.textContent = "No radios loaded";
+    select.appendChild(option);
+    renderRadioState(null);
+    return;
+  }
+
+  radiosCache.forEach((radio) => {
+    const option = document.createElement("option");
+    option.value = radio.id;
+    const suffix = radio.id === activeRadioId ? " [active]" : "";
+    option.textContent = `${radio.id} (${radio.status || "offline"})${suffix}`;
+    select.appendChild(option);
+  });
+
+  if (previous && radiosCache.some((radio) => radio.id === previous)) {
+    select.value = previous;
+  } else if (activeRadioId && radiosCache.some((radio) => radio.id === activeRadioId)) {
+    select.value = activeRadioId;
+  } else {
+    select.selectedIndex = 0;
+  }
+
+  const selected = radiosCache.find((radio) => radio.id === selectedRadioId()) || null;
+  renderRadioState(selected);
 }
 
 function onRadioSelected() {
-  const id = selectedRadioId();
-  const radio = radiosCache.find(r => r.id === id);
-  updateStateDisplay(radio ?? null);
-  populateChannelDropdown(radio ?? null);
+  const selected = radiosCache.find((radio) => radio.id === selectedRadioId()) || null;
+  renderRadioState(selected);
 }
 
-/* =====================================================
-   REST API calls
-===================================================== */
-async function loadRadios() {
-  radioLog("GET /api/v1/radios");
+function updateIdentityFromHealth(snapshot) {
+  const version = snapshot?.version || {};
+  document.getElementById("serviceName").textContent = "radio-control";
+  document.getElementById("serviceHealth").textContent = snapshot?.status || "-";
+  document.getElementById("serviceVersion").textContent = version.container || "-";
+  document.getElementById("serviceGitVersion").textContent = version.gitVersion || "-";
+  document.getElementById("serviceBuildDate").textContent = version.buildTime || "-";
+  document.getElementById("serviceSchema").textContent = version.schema || "-";
+}
+
+async function loadServiceIdentity() {
+  logLine("radioConsole", "GET " + API_BASE + "/health", "info");
   try {
-    const res = await fetch(API_BASE + "/radios", { headers: apiHeaders() });
-    const json = await res.json();
-    if (json.result !== "ok") {
-      radioLog("Error: " + (json.message ?? "unknown"), "err");
-      return;
+    const response = await fetch(API_BASE + "/health");
+    const snapshot = await response.json();
+    if (!response.ok || !snapshot || typeof snapshot !== "object") {
+      throw new Error("unexpected health payload");
     }
-    radiosCache = json.data.radios ?? [];
-    const active = json.data.active ?? null;
-
-    // Mark active
-    radiosCache.forEach(r => { r.isActive = (r.id === active); });
-
-    const sel = document.getElementById("radioSel");
-    const prev = sel.value;
-    sel.innerHTML = "";
-    radiosCache.forEach(r => {
-      const opt = document.createElement("option");
-      opt.value = r.id;
-      opt.textContent = r.id + (r.isActive ? " ★" : "") + " [" + (r.status ?? "offline") + "]";
-      sel.appendChild(opt);
-    });
-    // Try to restore selection, or pick active
-    if (radiosCache.some(r => r.id === prev)) {
-      sel.value = prev;
-    } else if (active && radiosCache.some(r => r.id === active)) {
-      sel.value = active;
-    }
-
-    onRadioSelected();
-    radioLog("Loaded " + radiosCache.length + " radio(s). Active: " + (active ?? "none"), "ok");
-  } catch (e) {
-    radioLog("Exception: " + e.message, "err");
+    updateIdentityFromHealth(snapshot);
+    logLine("radioConsole", "Health status -> " + (snapshot.status || "unknown"), "ok");
+  } catch (error) {
+    logLine("radioConsole", "Health unavailable: " + error.message, "warn");
   }
 }
 
-async function connectRadio() {
-  const radioId = selectedRadioId();
-  if (!radioId) { radioLog("Select a radio first", "warn"); return; }
-  radioLog("POST /api/v1/radio/connect  radioId=" + radioId);
+async function loadRadios() {
+  logLine("radioConsole", "GET " + API_BASE + "/radios", "info");
   try {
-    const res = await fetch(API_BASE + "/radio/connect", {
+    const response = await fetch(API_BASE + "/radios", { headers: apiHeaders() });
+    const body = await response.json();
+    if (!response.ok || body.result !== "ok") {
+      throw new Error(body.message || "request failed");
+    }
+    radiosCache = Array.isArray(body.data?.items) ? body.data.items : [];
+    activeRadioId = body.data?.activeRadioId || null;
+    refreshRadioDropdown();
+    logLine("radioConsole", `Loaded ${radiosCache.length} radio(s). Active=${activeRadioId || "none"}`, "ok");
+  } catch (error) {
+    logLine("radioConsole", "Radio load failed: " + error.message, "error");
+  }
+}
+
+async function selectRadio() {
+  const radioId = selectedRadioId();
+  if (!radioId) {
+    logLine("radioConsole", "Select a radio before POST /radios/select", "warn");
+    return;
+  }
+
+  logLine("radioConsole", "POST " + API_BASE + "/radios/select id=" + radioId, "info");
+  try {
+    const response = await fetch(API_BASE + "/radios/select", {
       method: "POST",
       headers: apiHeaders(true),
-      body: JSON.stringify({ radioId })
+      body: JSON.stringify({ id: radioId })
     });
-    const json = await res.json();
-    if (json.result === "ok") {
-      radioLog("Connect accepted: " + (json.message ?? "ok"), "ok");
-      await loadRadios();
-    } else {
-      radioLog("Error: " + (json.message ?? "rejected"), "err");
+    const body = await response.json();
+    if (!response.ok || body.result !== "ok") {
+      throw new Error(body.message || "request failed");
     }
-  } catch (e) {
-    radioLog("Exception: " + e.message, "err");
+    activeRadioId = body.data?.activeRadioId || radioId;
+    refreshRadioDropdown();
+    logLine("radioConsole", "Active radio updated to " + activeRadioId, "ok");
+  } catch (error) {
+    logLine("radioConsole", "Select failed: " + error.message, "error");
   }
 }
 
 async function setChannel() {
   const radioId = selectedRadioId();
-  if (!radioId) { radioLog("Select a radio first", "warn"); return; }
-  const chanSel = document.getElementById("chanSel");
-  const channelIndex = parseInt(chanSel.value);
-  const frequencyMhz = parseFloat(chanSel.selectedOptions[0]?.dataset.freq ?? "0");
-  if (isNaN(channelIndex)) {
-    radioLog("Select a channel from the dropdown", "warn"); return;
+  const select = document.getElementById("chanSel");
+  const channelIndex = Number.parseInt(select.value, 10);
+
+  if (!radioId) {
+    logLine("radioConsole", "Select a radio before setting channel", "warn");
+    return;
   }
-  radioLog(`PUT /api/v1/radio/channel  radioId=${radioId} channelIndex=${channelIndex} frequencyMhz=${frequencyMhz}`);
+  if (!Number.isInteger(channelIndex) || channelIndex < 1) {
+    logLine("radioConsole", "Choose a supported channel index first", "warn");
+    return;
+  }
+
+  const route = `${API_BASE}/radios/${encodeURIComponent(radioId)}/channel`;
+  logLine("radioConsole", `POST ${route} channelIndex=${channelIndex}`, "info");
   try {
-    const res = await fetch(API_BASE + "/radio/channel", {
-      method: "PUT",
+    const response = await fetch(route, {
+      method: "POST",
       headers: apiHeaders(true),
-      body: JSON.stringify({ radioId, channelIndex, frequencyMhz })
+      body: JSON.stringify({ channelIndex })
     });
-    const json = await res.json();
-    if (json.result === "ok") {
-      radioLog("Channel set: " + (json.message ?? "ok"), "ok");
-      await loadRadios();
-    } else {
-      radioLog("Error: " + (json.message ?? "rejected"), "err");
+    const body = await response.json();
+    if (!response.ok || body.result !== "ok") {
+      throw new Error(body.message || "request failed");
     }
-  } catch (e) {
-    radioLog("Exception: " + e.message, "err");
+    logLine("radioConsole", "Channel command accepted", "ok");
+    await loadRadios();
+  } catch (error) {
+    logLine("radioConsole", "Set channel failed: " + error.message, "error");
   }
 }
 
 async function setPower() {
   const radioId = selectedRadioId();
-  if (!radioId) { radioLog("Select a radio first", "warn"); return; }
-  const watts = parseFloat(document.getElementById("pwrWatts").value);
-  if (isNaN(watts) || watts < 0) {
-    radioLog("Enter a valid power value (watts >= 0)", "warn"); return;
+  const powerDbm = Number(document.getElementById("pwrDbm").value);
+
+  if (!radioId) {
+    logLine("radioConsole", "Select a radio before setting power", "warn");
+    return;
   }
-  radioLog(`PUT /api/v1/radio/power  radioId=${radioId} watts=${watts}`);
+  if (!Number.isFinite(powerDbm) || powerDbm < 0 || powerDbm > 39) {
+    logLine("radioConsole", "Power must be between 0 and 39 dBm", "warn");
+    return;
+  }
+
+  const route = `${API_BASE}/radios/${encodeURIComponent(radioId)}/power`;
+  logLine("radioConsole", `POST ${route} powerDbm=${powerDbm}`, "info");
   try {
-    const res = await fetch(API_BASE + "/radio/power", {
-      method: "PUT",
+    const response = await fetch(route, {
+      method: "POST",
       headers: apiHeaders(true),
-      body: JSON.stringify({ radioId, watts })
+      body: JSON.stringify({ powerDbm })
     });
-    const json = await res.json();
-    if (json.result === "ok") {
-      radioLog("Power set: " + (json.message ?? "ok"), "ok");
-      await loadRadios();
-    } else {
-      radioLog("Error: " + (json.message ?? "rejected"), "err");
+    const body = await response.json();
+    if (!response.ok || body.result !== "ok") {
+      throw new Error(body.message || "request failed");
     }
-  } catch (e) {
-    radioLog("Exception: " + e.message, "err");
+    logLine("radioConsole", "Power command accepted", "ok");
+    await loadRadios();
+  } catch (error) {
+    logLine("radioConsole", "Set power failed: " + error.message, "error");
   }
 }
 
-/* =====================================================
-   SSE event handling (updates Radio Control tab live)
-===================================================== */
-function handleRadioEvent(tag, data) {
-  const id = data.radioId ?? "";
-  if (!id || id !== selectedRadioId()) return;
-
-  const radio = radiosCache.find(r => r.id === id);
-  if (!radio) return;
-
-  if (tag === "rcc.radio.state") {
-    radio.status = data.status ?? radio.status;
-    radio.channelIndex = data.channelIndex ?? radio.channelIndex;
-    radio.powerWatts = data.powerWatts ?? radio.powerWatts;
-  } else if (tag === "rcc.radio.channel") {
-    radio.channelIndex = data.channelIndex ?? radio.channelIndex;
-  } else if (tag === "rcc.radio.power") {
-    radio.powerWatts = data.powerWatts ?? radio.powerWatts;
-  }
-  updateStateDisplay(radio);
+function updateSseStatus(connected, label) {
+  const status = document.getElementById("sseStatus");
+  status.textContent = label;
+  status.className = connected ? "badge badge-online" : "badge badge-offline";
+  document.getElementById("connectBtn").disabled = connected;
+  document.getElementById("disconnectBtn").disabled = !connected;
 }
 
-/* =====================================================
-   SSE Connection
-===================================================== */
-const defaultSsePort = parseInt(window.location.port) + 1 || 8083;
-document.getElementById("sseUrl").value =
-  `http://${window.location.hostname}:${defaultSsePort}/api/v1/telemetry`;
+function updateLastEventIdDisplay() {
+  document.getElementById("lastEventId").textContent = lastEventId || "none";
+}
 
-const eventFilters = new Set(
-  Array.from(document.querySelectorAll(".event-filter"))
-    .filter(cb => cb.checked).map(cb => cb.value)
-);
+function storeLastEventId(id) {
+  if (!id) return;
+  lastEventId = String(id);
+  window.localStorage.setItem(LAST_EVENT_ID_KEY, lastEventId);
+  updateLastEventIdDisplay();
+}
 
-document.addEventListener("change", (e) => {
-  if (!e.target.classList.contains("event-filter")) return;
-  if (e.target.checked) eventFilters.add(e.target.value);
-  else eventFilters.delete(e.target.value);
-  applyFilters();
-});
+function clearSseEvents() {
+  document.getElementById("sseConsole").innerHTML = "";
+  eventCount = 0;
+  document.getElementById("eventCount").textContent = "0";
+}
 
-let sseController = null;
-let eventCount = 0;
+function resetResumeState() {
+  lastEventId = "";
+  window.localStorage.removeItem(LAST_EVENT_ID_KEY);
+  updateLastEventIdDisplay();
+  logLine("radioConsole", "Cleared Last-Event-ID resume state", "ok");
+}
 
-function addSseEvent(type, data, id = null) {
-  const consoleDiv = document.getElementById("sseConsole");
-  const eventDiv = document.createElement("div");
-  eventDiv.className = `event ${type}`;
-  eventDiv.style.borderLeft = "3px solid var(--edge-accent)";
-  eventDiv.style.marginBottom = "6px";
-  eventDiv.style.padding = "6px";
-  eventDiv.style.background = "var(--edge-surface)";
+function addSseEvent(tag, payload, id) {
+  if (id) {
+    storeLastEventId(id);
+  }
 
-  const ts = new Date().toISOString();
+  const consoleNode = document.getElementById("sseConsole");
+  const card = document.createElement("div");
+  card.className = "event-card " + tag;
+
   const header = document.createElement("div");
-  header.style.color = type === "rcc.fault" ? "#c62828" : "var(--edge-ink)";
-  header.textContent = `[${ts}] ${type}${id ? "  #" + id : ""}`;
+  header.className = "event-header";
 
-  const body = document.createElement("pre");
-  body.style.margin = "4px 0 0 0";
-  body.style.color = "var(--edge-ink-muted)";
-  body.style.fontSize = "12px";
-  body.style.fontFamily = "monospace";
-  body.textContent = JSON.stringify(data, null, 2);
+  const name = document.createElement("span");
+  name.textContent = tag;
 
-  eventDiv.appendChild(header);
-  eventDiv.appendChild(body);
-  eventCount++;
-  document.getElementById("counter").textContent = `Events: ${eventCount}`;
+  const meta = document.createElement("span");
+  meta.className = "event-meta";
+  meta.textContent = `${new Date().toISOString()}${id ? " | id " + id : ""}`;
 
-  if (!eventFilters.has(type)) eventDiv.style.display = "none";
+  header.appendChild(name);
+  header.appendChild(meta);
 
-  consoleDiv.insertBefore(eventDiv, consoleDiv.firstChild);
-  while (consoleDiv.children.length > 200) consoleDiv.removeChild(consoleDiv.lastChild);
+  const pre = document.createElement("pre");
+  pre.className = "event-payload";
+  pre.textContent = typeof payload === "string" ? payload : JSON.stringify(payload, null, 2);
+
+  card.appendChild(header);
+  card.appendChild(pre);
+
+  if (!eventFilters.has(tag)) {
+    card.style.display = "none";
+  }
+
+  consoleNode.prepend(card);
+  while (consoleNode.children.length > 200) {
+    consoleNode.removeChild(consoleNode.lastChild);
+  }
+
+  eventCount += 1;
+  document.getElementById("eventCount").textContent = String(eventCount);
 }
 
-function applyFilters() {
-  document.querySelectorAll("#sseConsole .event").forEach(ev => {
-    const type = Array.from(ev.classList).find(c => c !== "event");
-    if (!type) return;
-    ev.style.display = eventFilters.has(type) ? "" : "none";
+function applyFilterVisibility() {
+  document.querySelectorAll("#sseConsole .event-card").forEach((card) => {
+    const type = Array.from(card.classList).find((value) => value !== "event-card");
+    card.style.display = type && eventFilters.has(type) ? "" : "none";
   });
 }
 
-async function connect() {
-  disconnect();
-  const url = document.getElementById("sseUrl").value;
-  const token = document.getElementById("sseToken").value;
+async function connectSse() {
+  disconnectSse();
+
+  const url = document.getElementById("sseUrl").value.trim();
+  const token = document.getElementById("sseToken").value.trim();
+  const headers = {
+    "Accept": "text/event-stream",
+    "Cache-Control": "no-cache"
+  };
+  if (token) {
+    headers["Authorization"] = "Bearer " + token;
+  }
+  if (lastEventId) {
+    headers["Last-Event-ID"] = lastEventId;
+  }
+
   sseController = new AbortController();
+  updateSseStatus(false, "Connecting...");
 
   try {
     const response = await fetch(url, {
-      headers: { "Authorization": `Bearer ${token}` },
+      headers,
       signal: sseController.signal
     });
-    if (!response.body) throw new Error("ReadableStream not supported");
 
-    updateSseStatus(true);
-    addSseEvent("SYSTEM", { message: "SSE connection established" });
+    if (!response.ok) {
+      let detail = response.statusText || "connect failed";
+      try {
+        const body = await response.text();
+        if (body) {
+          detail = `${response.status} ${detail}: ${body}`;
+        }
+      } catch (_) {}
+      throw new Error(detail);
+    }
+
+    if (!response.body) {
+      throw new Error("ReadableStream not supported by this browser");
+    }
+
+    updateSseStatus(true, "Connected");
+    addSseEvent("SYSTEM", { message: "SSE connection established" }, null);
 
     const reader = response.body.getReader();
     const decoder = new TextDecoder("utf-8");
@@ -670,78 +1096,111 @@ async function connect() {
       const { done, value } = await reader.read();
       if (done) break;
       buffer += decoder.decode(value, { stream: true });
-      const parts = buffer.split("\n\n");
-      buffer = parts.pop();
-      for (const part of parts) {
-        if (!part.trim()) continue;
-        let tag = "MESSAGE", eventData = "", eventId = null;
-        part.split("\n").forEach(line => {
-          if (line.startsWith("event:")) tag = line.replace("event:", "").trim();
-          else if (line.startsWith("data:")) eventData += line.replace("data:", "").trim();
-          else if (line.startsWith("id:")) eventId = line.replace("id:", "").trim();
-        });
-        let parsed;
-        try { parsed = JSON.parse(eventData); } catch { parsed = eventData; }
-        if (tag === "MESSAGE") tag = "SYSTEM";
 
-        // Live-update radio tab for radio events
-        if (tag.startsWith("rcc.radio.") && typeof parsed === "object") {
-          handleRadioEvent(tag, parsed);
+      const parts = buffer.split("\n\n");
+      buffer = parts.pop() || "";
+
+      for (const part of parts) {
+        if (!part.trim()) {
+          continue;
         }
-        addSseEvent(tag, parsed, eventId);
+
+        let tag = "SYSTEM";
+        let eventId = null;
+        const dataLines = [];
+
+        part.split("\n").forEach((line) => {
+          if (line.startsWith("event:")) {
+            tag = line.slice(6).trim();
+          } else if (line.startsWith("id:")) {
+            eventId = line.slice(3).trim();
+          } else if (line.startsWith("data:")) {
+            dataLines.push(line.slice(5).trim());
+          }
+        });
+
+        const payloadText = dataLines.join("\n");
+        let payload = payloadText;
+        if (payloadText) {
+          try {
+            payload = JSON.parse(payloadText);
+          } catch (_) {}
+        }
+
+        applyTelemetryEvent(tag, payload);
+        if (selectedRadioId()) {
+          renderRadioState(radiosCache.find((radio) => radio.id === selectedRadioId()) || null);
+        }
+        addSseEvent(tag, payload, eventId);
       }
     }
-  } catch (err) {
-    if (err.name !== "AbortError") {
-      updateSseStatus(false);
-      addSseEvent("ERROR", { message: "Connection error: " + err.message });
+
+    updateSseStatus(false, "Disconnected");
+    addSseEvent("SYSTEM", { message: "SSE stream closed by server" }, null);
+  } catch (error) {
+    if (error.name === "AbortError") {
+      addSseEvent("SYSTEM", { message: "SSE connection closed by operator" }, null);
+    } else {
+      updateSseStatus(false, "Disconnected");
+      addSseEvent("ERROR", { message: error.message }, null);
+      logLine("radioConsole", "SSE connect failed: " + error.message, "error");
     }
   }
 }
 
-function disconnect() {
-  if (sseController) {
-    sseController.abort();
-    sseController = null;
-    updateSseStatus(false);
+function disconnectSse() {
+  if (!sseController) {
+    updateSseStatus(false, "Disconnected");
+    return;
   }
+  sseController.abort();
+  sseController = null;
+  updateSseStatus(false, "Disconnected");
 }
 
-function updateSseStatus(connected) {
-  const el = document.getElementById("sseStatus");
-  el.textContent = connected ? "● Connected" : "● Disconnected";
-  el.className = connected ? "connected" : "disconnected";
-  document.getElementById("btnConnect").disabled = connected;
-  document.getElementById("btnDisconnect").disabled = !connected;
-}
-
-function clearEvents() {
-  document.getElementById("sseConsole").innerHTML = "";
-  eventCount = 0;
-  document.getElementById("counter").textContent = "Events: 0";
-}
-
-/* =====================================================
-   Init
-===================================================== */
 async function fetchDevToken() {
   try {
-    const res = await fetch("/api/v1/dev-token");
-    const json = await res.json();
-    if (json.result === "ok" && json.data?.token) {
-      globalToken = json.data.token;
-      document.getElementById("apiToken").value = globalToken;
-      document.getElementById("sseToken").value = globalToken;
-      radioLog("Dev token loaded automatically (operator scope)", "ok");
+    const response = await fetch(API_BASE + "/dev-token");
+    const body = await response.json();
+    if (response.ok && body.result === "ok" && body.data?.token) {
+      setToken(body.data.token);
+      logLine("radioConsole", "Loaded dev token for monitor bench use", "ok");
     } else {
-      radioLog("Dev token unavailable: " + (json.message ?? "no token in response"), "warn");
+      logLine("radioConsole", "Dev token unavailable: " + (body.message || "request failed"), "warn");
     }
-  } catch (e) {
-    radioLog("Could not fetch dev token: " + e.message, "warn");
+  } catch (error) {
+    logLine("radioConsole", "Could not fetch dev token: " + error.message, "warn");
   }
+}
+
+function defaultSseUrl() {
+  const currentPort = Number.parseInt(window.location.port || "8080", 10);
+  const ssePort = Number.isFinite(currentPort) ? currentPort + 1 : 8081;
+  return `${window.location.protocol}//${window.location.hostname}:${ssePort}/api/v1/telemetry`;
+}
+
+function initializeFilters() {
+  document.querySelectorAll(".event-filter").forEach((checkbox) => {
+    if (checkbox.checked) {
+      eventFilters.add(checkbox.value);
+    }
+    checkbox.addEventListener("change", () => {
+      if (checkbox.checked) {
+        eventFilters.add(checkbox.value);
+      } else {
+        eventFilters.delete(checkbox.value);
+      }
+      applyFilterVisibility();
+    });
+  });
 }
 
 async function init() {
+  document.getElementById("sseUrl").value = defaultSseUrl();
+  document.getElementById("apiToken").addEventListener("input", (event) => setToken(event.target.value));
+  initializeFilters();
+  updateLastEventIdDisplay();
+  updateSseStatus(false, "Disconnected");
   await loadServiceIdentity();
   await fetchDevToken();
   await loadRadios();

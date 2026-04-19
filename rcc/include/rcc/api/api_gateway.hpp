@@ -35,7 +35,8 @@ public:
                radio::RadioManager& radioManager,
                telemetry::TelemetryHub& telemetry,
                uint16_t restPort,
-               std::string tokenSecret);
+               std::string tokenSecret,
+               bool allowUnauthenticatedDevAccess);
     ~ApiGateway();
 
     ApiGateway(const ApiGateway&) = delete;

@@ -20,6 +20,8 @@ struct AuthResult {
     std::string subject;
     std::string message;
     dts::common::security::Scope scope{dts::common::security::Scope::Viewer};
+    int http_status{401};
+    std::string error_code{"UNAUTHORIZED"};
 };
 
 class Authenticator {

@@ -20,6 +20,7 @@ telemetry:
 
 security:
   token_secret: "replace-me"
+  allow_unauthenticated_dev_access: false
   allowed_roles:
     - viewer
     - controller
@@ -42,5 +43,4 @@ radios:
   - id: "silvus-001"
     adapter: "silvus"
     endpoint: "http://127.0.0.1:9000"
-
 

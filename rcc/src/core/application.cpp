@@ -97,6 +97,21 @@ void Application::initialize(int argc, char* argv[]) {
     config_ = std::make_unique<config::ConfigManager>(configPath_);
     const auto& cfg = config_->current();
 
+    if (cfg.security.token_secret.empty()) {
+        if (cfg.security.allow_unauthenticated_dev_access) {
+            std::cerr
+                << "WARNING: security.token_secret is empty and "
+                   "security.allow_unauthenticated_dev_access=true; "
+                   "RCC control surfaces are in bench-only insecure mode"
+                << std::endl;
+        } else {
+            std::cerr
+                << "WARNING: security.token_secret is empty; authenticated "
+                   "endpoints will reject requests until a token secret is configured"
+                << std::endl;
+        }
+    }
+
     authenticator_ = std::make_unique<auth::Authenticator>(cfg.security);
     telemetry_     = std::make_unique<telemetry::TelemetryHub>(io, cfg);
     auditLogger_   = std::make_unique<audit::AuditLogger>();
@@ -108,7 +123,8 @@ void Application::initialize(int argc, char* argv[]) {
     apiGateway_ = std::make_unique<api::ApiGateway>(
         io, *authenticator_, *orchestrator_,
         *radioManager_, *telemetry_, cfg.network.command_port,
-        cfg.security.token_secret);
+        cfg.security.token_secret,
+        cfg.security.allow_unauthenticated_dev_access);
 
     // Service discovery responder
     DiscoveryResponderConfig disc_config;

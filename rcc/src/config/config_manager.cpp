@@ -148,6 +148,10 @@ SecurityConfig loadSecurityConfig(const YAML::Node& node) {
             optionalScalar<std::string>(node, "token_secret", "security")) {
         cfg.token_secret = *value;
     }
+    if (const auto value = optionalScalar<bool>(
+            node, "allow_unauthenticated_dev_access", "security")) {
+        cfg.allow_unauthenticated_dev_access = *value;
+    }
     if (const auto value = optionalScalar<std::vector<std::string>>(
             node, "allowed_roles", "security")) {
         cfg.allowed_roles = *value;

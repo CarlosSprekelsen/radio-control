@@ -50,6 +50,8 @@ TEST(Authenticator, RejectsViewerForControl) {
         makeRequest("Bearer " + token), rcc::auth::AccessLevel::Control);
     EXPECT_FALSE(result.allowed);
     EXPECT_FALSE(result.message.empty());
+    EXPECT_EQ(result.http_status, 403);
+    EXPECT_EQ(result.error_code, "FORBIDDEN");
 }
 
 TEST(Authenticator, RejectsMissingHeader) {
@@ -57,6 +59,8 @@ TEST(Authenticator, RejectsMissingHeader) {
     const auto result = auth.authorize(
         makeRequest(""), rcc::auth::AccessLevel::Telemetry);
     EXPECT_FALSE(result.allowed);
+    EXPECT_EQ(result.http_status, 401);
+    EXPECT_EQ(result.error_code, "UNAUTHORIZED");
 }
 
 TEST(Authenticator, RejectsGarbageToken) {
@@ -66,10 +70,20 @@ TEST(Authenticator, RejectsGarbageToken) {
     EXPECT_FALSE(result.allowed);
 }
 
-TEST(Authenticator, NoSecretAllowsAll) {
-    // Empty token_secret → unauthenticated access
+TEST(Authenticator, NoSecretRejectsByDefault) {
     rcc::config::SecurityConfig cfg;
     cfg.token_secret = "";
+    rcc::auth::Authenticator auth(cfg);
+    const auto result = auth.authorize(
+        makeRequest(""), rcc::auth::AccessLevel::Telemetry);
+    EXPECT_FALSE(result.allowed);
+    EXPECT_EQ(result.http_status, 401);
+}
+
+TEST(Authenticator, ExplicitDevOptInAllowsAnonymous) {
+    rcc::config::SecurityConfig cfg;
+    cfg.token_secret = "";
+    cfg.allow_unauthenticated_dev_access = true;
     rcc::auth::Authenticator auth(cfg);
     const auto result = auth.authorize(
         makeRequest(""), rcc::auth::AccessLevel::Telemetry);
@@ -83,4 +97,21 @@ TEST(Authenticator, AdminTokenGrantsControl) {
     const auto result = auth.authorize(
         makeRequest("Bearer " + token), rcc::auth::AccessLevel::Control);
     EXPECT_TRUE(result.allowed);
+}
+
+TEST(Authenticator, DevOptInStillRespectsAllowedRoles) {
+    rcc::config::SecurityConfig cfg;
+    cfg.token_secret = "";
+    cfg.allow_unauthenticated_dev_access = true;
+    cfg.allowed_roles = {"viewer"};
+    rcc::auth::Authenticator auth(cfg);
+
+    const auto telemetry = auth.authorize(
+        makeRequest(""), rcc::auth::AccessLevel::Telemetry);
+    const auto control = auth.authorize(
+        makeRequest(""), rcc::auth::AccessLevel::Control);
+
+    EXPECT_TRUE(telemetry.allowed);
+    EXPECT_FALSE(control.allowed);
+    EXPECT_EQ(control.http_status, 401);
 }

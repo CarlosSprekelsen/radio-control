@@ -37,7 +37,8 @@ public:
     void publishChannelChanged(const std::string& radioId, int channelIndex,
                                double frequencyMHz);
     void publishPowerChanged(const std::string& radioId, double watts);
-    void publishFault(const std::string& radioId, const std::string& reason);
+    void publishFault(const std::string& radioId, const std::string& code,
+                      const std::string& message, int retryMs = 0);
     void publishEvent(const std::string& tag, nlohmann::json payload);
 
 private:

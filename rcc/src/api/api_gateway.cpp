@@ -266,11 +266,13 @@ public:
          radio::RadioManager& radioManager,
          telemetry::TelemetryHub& /*telemetry*/,
          uint16_t restPort,
-         std::string tokenSecret)
+         std::string tokenSecret,
+         bool allowUnauthenticatedDevAccess)
         : auth_{auth}
         , orchestrator_{orchestrator}
         , radioManager_{radioManager}
         , tokenSecret_{std::move(tokenSecret)}
+        , allowUnauthenticatedDevAccess_{allowUnauthenticatedDevAccess}
         , timing_{}
         , restServer_{std::make_unique<dts::common::rest::RestServer>(
               io,
@@ -303,6 +305,11 @@ private:
         return auth_.authorize(req, level);
     }
 
+    std::string authErrorResponse(const auth::AuthResult& result) {
+        const char* statusText = result.http_status == 403 ? "Forbidden" : "Unauthorized";
+        return errJson(result.http_status, statusText, result.error_code, result.message);
+    }
+
     void registerRoutes() {
         auto& router = restServer_->router();
 
@@ -315,9 +322,9 @@ private:
         router.addRoute("/api/v1/dev-token",
             [this](const dts::common::rest::HttpRequest& req) {
                 if (req.method != "GET") return errJson(405, "Method Not Allowed", "Use GET");
-                if (tokenSecret_.empty())
+                if (tokenSecret_.empty() && !allowUnauthenticatedDevAccess_)
                     return errJson(503, "Service Unavailable",
-                                   "token_secret not configured — set it in config.yaml");
+                                   "token_secret not configured — set it in config.yaml or enable security.allow_unauthenticated_dev_access for bench use");
                 const std::string token = makeDevToken(tokenSecret_);
                 return okJson({{"token", token}, {"scope", "operator"},
                                {"note", "dev/test token — not for production"}});
@@ -372,7 +379,7 @@ private:
             [this](const dts::common::rest::HttpRequest& req) {
                 if (req.method != "GET") return errJson(405, "Method Not Allowed", "Use GET");
                 const auto ar = checkAuth(req, auth::AccessLevel::Telemetry);
-                if (!ar.allowed) return errJson(401, "Unauthorized", ar.message);
+                if (!ar.allowed) return authErrorResponse(ar);
                 return okJson({{"telemetry", {"sse"}},
                                {"commands", {"http-json"}},
                                {"version", "1.0.0"}});
@@ -383,7 +390,7 @@ private:
             [this](const dts::common::rest::HttpRequest& req) {
                 if (req.method != "GET") return errJson(405, "Method Not Allowed", "Use GET");
                 const auto ar = checkAuth(req, auth::AccessLevel::Telemetry);
-                if (!ar.allowed) return errJson(401, "Unauthorized", ar.message);
+                if (!ar.allowed) return authErrorResponse(ar);
                 return buildRadioListResponse();
             });
 
@@ -392,7 +399,7 @@ private:
             [this](const dts::common::rest::HttpRequest& req) {
                 if (req.method != "POST") return errJson(405, "Method Not Allowed", "Use POST");
                 const auto ar = checkAuth(req, auth::AccessLevel::Control);
-                if (!ar.allowed) return errJson(401, "Unauthorized", ar.message);
+                if (!ar.allowed) return authErrorResponse(ar);
                 return handleSelect(req);
             });
 
@@ -479,7 +486,7 @@ private:
         auto slashPos = suffix.find('/');
         if (slashPos == std::string::npos) {
             const auto ar = checkAuth(req, auth::AccessLevel::Telemetry);
-            if (!ar.allowed) return errJson(401, "Unauthorized", ar.message);
+            if (!ar.allowed) return authErrorResponse(ar);
             if (req.method != "GET") return errJson(405, "Method Not Allowed", "Use GET");
             return handleGetRadio(req, suffix);
         }
@@ -489,10 +496,10 @@ private:
         if (sub == "power" || sub == "channel") {
             if (req.method == "GET") {
                 const auto ar = checkAuth(req, auth::AccessLevel::Telemetry);
-                if (!ar.allowed) return errJson(401, "Unauthorized", ar.message);
+                if (!ar.allowed) return authErrorResponse(ar);
             } else {
                 const auto ar = checkAuth(req, auth::AccessLevel::Control);
-                if (!ar.allowed) return errJson(401, "Unauthorized", ar.message);
+                if (!ar.allowed) return authErrorResponse(ar);
             }
         } else {
             return errJson(404, "Not Found", "NOT_FOUND", "Unknown sub-resource: " + sub);
@@ -610,6 +617,7 @@ private:
     command::Orchestrator& orchestrator_;
     radio::RadioManager&   radioManager_;
     std::string            tokenSecret_;
+    bool                   allowUnauthenticatedDevAccess_{false};
     dts::common::core::TimingProfile timing_;   // must outlive restServer_
     std::unique_ptr<dts::common::rest::RestServer> restServer_;
 };
@@ -622,10 +630,12 @@ ApiGateway::ApiGateway(asio::io_context& io,
                        radio::RadioManager& radioManager,
                        telemetry::TelemetryHub& telemetry,
                        uint16_t restPort,
-                       std::string tokenSecret)
+                       std::string tokenSecret,
+                       bool allowUnauthenticatedDevAccess)
     : impl_{std::make_unique<Impl>(io, authenticator, orchestrator,
                                    radioManager, telemetry,
-                                   restPort, std::move(tokenSecret))}
+                                   restPort, std::move(tokenSecret),
+                                   allowUnauthenticatedDevAccess)}
 {}
 
 ApiGateway::~ApiGateway() = default;

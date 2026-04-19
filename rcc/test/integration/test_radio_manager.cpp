@@ -68,6 +68,18 @@ TEST(RadioManager, GetAdapterReturnsValidForKnown) {
     EXPECT_EQ(adapter->id(), "silvus-1");
 }
 
+TEST(RadioManager, StopPreservesRadioCatalog) {
+    asio::io_context io{1};
+    rcc::radio::RadioManager mgr(io, makeConfig());
+    mgr.set_active_radio("silvus-1");
+
+    mgr.stop();
+
+    EXPECT_FALSE(mgr.active_radio().has_value());
+    ASSERT_EQ(mgr.list_radios().size(), 1u);
+    EXPECT_NE(mgr.get_adapter("silvus-1"), nullptr);
+}
+
 TEST(RadioManager, EmptyConfigHasNoRadios) {
     asio::io_context io{1};
     rcc::config::Config cfg;

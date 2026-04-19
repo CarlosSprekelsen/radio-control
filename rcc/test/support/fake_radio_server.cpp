@@ -15,21 +15,22 @@ FakeRadioServer::FakeRadioServer(uint16_t port) : port_(port) {}
 FakeRadioServer::~FakeRadioServer() { stop(); }
 
 void FakeRadioServer::start() {
-    server_fd_ = ::socket(AF_INET, SOCK_STREAM, 0);
-    if (server_fd_ < 0) throw std::runtime_error("FakeRadioServer: socket() failed");
+    const int fd = ::socket(AF_INET, SOCK_STREAM, 0);
+    if (fd < 0) throw std::runtime_error("FakeRadioServer: socket() failed");
+    server_fd_.store(fd);
 
     int opt = 1;
-    ::setsockopt(server_fd_, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
+    ::setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
 
     sockaddr_in addr{};
     addr.sin_family      = AF_INET;
     addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
     addr.sin_port        = htons(port_);
 
-    if (::bind(server_fd_, reinterpret_cast<sockaddr*>(&addr), sizeof(addr)) < 0)
+    if (::bind(fd, reinterpret_cast<sockaddr*>(&addr), sizeof(addr)) < 0)
         throw std::runtime_error("FakeRadioServer: bind() failed on port " +
                                  std::to_string(port_));
-    ::listen(server_fd_, 4);
+    ::listen(fd, 4);
 
     running_ = true;
     thread_  = std::thread([this] { acceptLoop(); });
@@ -37,7 +38,11 @@ void FakeRadioServer::start() {
 
 void FakeRadioServer::stop() {
     running_ = false;
-    if (server_fd_ >= 0) { ::shutdown(server_fd_, SHUT_RDWR); ::close(server_fd_); server_fd_ = -1; }
+    const int fd = server_fd_.exchange(-1);
+    if (fd >= 0) {
+        ::shutdown(fd, SHUT_RDWR);
+        ::close(fd);
+    }
     if (thread_.joinable()) thread_.join();
 }
 
@@ -45,7 +50,9 @@ void FakeRadioServer::acceptLoop() {
     while (running_) {
         sockaddr_in client{};
         socklen_t   len = sizeof(client);
-        int cfd = ::accept(server_fd_, reinterpret_cast<sockaddr*>(&client), &len);
+        const int fd = server_fd_.load();
+        if (fd < 0) break;
+        int cfd = ::accept(fd, reinterpret_cast<sockaddr*>(&client), &len);
         if (cfd < 0) break;
 
         // Read request (ignore content)
