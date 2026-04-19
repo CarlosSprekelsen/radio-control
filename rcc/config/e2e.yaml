@@ -1,0 +1,36 @@
+container:
+  id: "rcc-e2e"
+  deployment: "e2e"
+  soldier_id: "operator-001"
+network:
+  bind_address: "0.0.0.0"
+  command_port: 8080
+telemetry:
+  sse_port: 8081
+  heartbeat_interval_sec: 5
+  event_buffer_size: 512
+  event_retention_hours: 24
+  max_sse_clients: 8
+  client_idle_timeout_sec: 60
+security:
+  token_secret: "e2e-test-secret"
+  allow_unauthenticated_dev_access: true
+  allowed_roles:
+    - viewer
+    - controller
+  token_ttl_sec: 300
+serviceDiscovery:
+  enabled: true
+  port: 9999
+  ttl: 60
+  startupBurstCount: 1
+  startupBurstSpacingMs: 1000
+  bindAddress: "0.0.0.0"
+timing:
+  normal_probe_sec: 30
+  recovering_probe_sec: 10
+  offline_probe_sec: 60
+radios:
+  - id: "silvus-001"
+    adapter: "silvus"
+    endpoint: "http://127.0.0.1:9080"
