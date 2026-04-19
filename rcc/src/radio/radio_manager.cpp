@@ -21,7 +21,6 @@ void RadioManager::start() {
 
 void RadioManager::stop() {
     std::lock_guard<std::mutex> lock(mutex_);
-    radios_.clear();
     active_radio_.reset();
 }
 
