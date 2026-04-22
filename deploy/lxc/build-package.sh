@@ -127,6 +127,17 @@ fi
 BUILD_USER="${SUDO_USER:-root}"
 BUILD_GROUP="$(id -gn "$BUILD_USER" 2>/dev/null || echo root)"
 
+run_as_build_user() {
+    if [[ -n "${SUDO_USER:-}" && "${SUDO_USER}" != "root" ]]; then
+        local build_user_home
+        build_user_home="$(getent passwd "$SUDO_USER" | cut -d: -f6)"
+        [[ -z "$build_user_home" ]] && build_user_home="/home/$SUDO_USER"
+        sudo -u "$SUDO_USER" -H env HOME="$build_user_home" "$@"
+    else
+        "$@"
+    fi
+}
+
 # Test user configuration for image (used for quick SSH access during testing)
 TEST_USER_SSH_KEY="${TEST_USER_SSH_KEY:-}"
 
@@ -577,12 +588,12 @@ compile_binary() {
     fi
     
     log "[$ARCH] Running CMake..."
-    if ! cmake "${CMAKE_ARGS[@]}" 2>&1 | tee cmake.log; then
+    if ! run_as_build_user cmake "${CMAKE_ARGS[@]}" 2>&1 | tee cmake.log; then
         error "[$ARCH] CMake failed. Check: $BUILD_DIR/cmake.log"
     fi
     
     log "[$ARCH] Building..."
-    if ! cmake --build . --parallel "$MAX_BUILD_JOBS" 2>&1 | tee build.log; then
+    if ! run_as_build_user cmake --build . --parallel "$MAX_BUILD_JOBS" 2>&1 | tee build.log; then
         error "[$ARCH] Build failed. Check: $BUILD_DIR/build.log"
     fi
     
