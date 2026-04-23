@@ -544,9 +544,16 @@ compile_binary() {
     [[ -z "$CXX_COMPILER" ]] && error "[$ARCH] No compiler found"
     log "[$ARCH] Using $CXX_COMPILER"
     
-    [[ -f "$BUILD_DIR/CMakeCache.txt" ]] && rm -rf "$BUILD_DIR"
+    if [[ -d "$BUILD_DIR" ]]; then
+        rm -rf "$BUILD_DIR"
+    fi
     
-    mkdir -p "$BUILD_DIR" || error "Cannot create build dir: $BUILD_DIR"
+    if [[ "$BUILD_USER" != "root" ]]; then
+        run_as_build_user mkdir -p "$BUILD_DIR" || error "[$ARCH] Cannot create build dir as $BUILD_USER: $BUILD_DIR"
+    else
+        mkdir -p "$BUILD_DIR" || error "Cannot create build dir: $BUILD_DIR"
+    fi
+    
     cd "$BUILD_DIR" || error "Cannot cd to build dir"
     
     local CMAKE_ARGS=(
