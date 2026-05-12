@@ -22,9 +22,9 @@ DISABLE_DEBOOTSTRAP_CACHE="${DISABLE_DEBOOTSTRAP_CACHE:-false}"
 DEBOOTSTRAP_REUSE_BASE_TARBALL="${DEBOOTSTRAP_REUSE_BASE_TARBALL:-true}"
 CONFIGURED_ROOTFS_CACHE_DIR="${CONFIGURED_ROOTFS_CACHE_DIR:-$PROJECT_ROOT/.cache/configured-rootfs}"
 DISABLE_CONFIGURED_ROOTFS_CACHE="${DISABLE_CONFIGURED_ROOTFS_CACHE:-false}"
-CONTAINER_IPV4="${CONTAINER_IPV4:-192.168.101.35}"
-CONTAINER_NETMASK="${CONTAINER_NETMASK:-255.255.255.0}"
-CONTAINER_GATEWAY="${CONTAINER_GATEWAY:-192.168.101.100}"
+STATIC_IFACE="${STATIC_IFACE:-eth0}"
+STATIC_IP="${STATIC_IP:-192.168.101.35/16}"
+STATIC_GATEWAY="${STATIC_GATEWAY:-192.168.101.100}"
 BUILD_STAMP="${BUILD_STAMP:-$(date -u +%Y%m%dT%H%M%SZ)}"
 
 GREEN='\033[0;32m'
@@ -767,7 +767,7 @@ export RCC_CONTAINER_ID="rcc-dev-001"
 export RCC_SOLDIER_ID="soldier-001"
 ENVEOF
     printf 'export CONTAINER_IPV4="%s"\nexport CONTAINER_GATEWAY="%s"\n' \
-        "${CONTAINER_IPV4}" "${CONTAINER_GATEWAY}" >> "$rootfs/etc/environment.rcc"
+        "${STATIC_IP%/*}" "${STATIC_GATEWAY}" >> "$rootfs/etc/environment.rcc"
 
     # Create test user 'ubuntu' for SSH access
     log "[$ARCH] Creating test user 'ubuntu' for SSH access..."
@@ -800,9 +800,8 @@ ENVEOF
     cat > "$rootfs/etc/network/interfaces.d/eth0" <<EOF
 auto eth0
 iface eth0 inet static
-    address ${CONTAINER_IPV4}
-    netmask ${CONTAINER_NETMASK}
-    gateway ${CONTAINER_GATEWAY}
+    address ${STATIC_IP}
+    gateway ${STATIC_GATEWAY}
 EOF
 
     if [[ ! -f "$rootfs/etc/network/interfaces" ]]; then
