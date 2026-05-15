@@ -11,7 +11,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 OUTPUT_DIR="${OUTPUT_DIR:-$PROJECT_ROOT/packages}"
-CONFIG_SOURCE="${CONFIG_SOURCE:-$PROJECT_ROOT/rcc/config/production.yaml}"
+CONFIG_SOURCE="${CONFIG_SOURCE:-$PROJECT_ROOT/rcc/config/default.yaml}"
 MIRROR_DEFAULT="${MIRROR_DEFAULT:-http://archive.ubuntu.com/ubuntu}"
 MIRROR_PORTS="${MIRROR_PORTS:-http://ports.ubuntu.com/ubuntu-ports}"
 USE_APT_CACHE_NG="${USE_APT_CACHE_NG:-auto}"
@@ -465,22 +465,39 @@ if [[ ! -f "$CONFIG_SOURCE" ]]; then
     warn "Creating default config..."
     mkdir -p "$(dirname "$CONFIG_SOURCE")"
     cat > "$CONFIG_SOURCE" << 'EOF'
-server:
-  host: 0.0.0.0
-  port: 8080
-  tls: false
-
-radio:
-  default_baud: 115200
-  poll_interval_ms: 1000
-
+container:
+  id: "rcc-container"
+  deployment: "default"
+  soldier_id: "operator-001"
+network:
+  bind_address: "0.0.0.0"
+  command_port: 8080
 telemetry:
-  buffer_size: 100
-  max_clients: 10
-
-logging:
-  level: info
-  output: stdout
+  sse_port: 8081
+  heartbeat_interval_sec: 30
+  event_buffer_size: 512
+  event_retention_hours: 24
+  max_sse_clients: 8
+  client_idle_timeout_sec: 60
+security:
+  token_secret: "dts-shared-jwt-key-2026"
+  allow_unauthenticated_dev_access: false
+  allowed_roles:
+    - viewer
+    - controller
+  token_ttl_sec: 300
+serviceDiscovery:
+  enabled: true
+  port: 9999
+  ttl: 60
+  startupBurstCount: 1
+  startupBurstSpacingMs: 1000
+  bindAddress: "0.0.0.0"
+timing:
+  normal_probe_sec: 30
+  recovering_probe_sec: 10
+  offline_probe_sec: 60
+radios: []
 EOF
 fi
 
@@ -631,9 +648,9 @@ build_image() {
     mkdir -p "$rootfs"
     
     log "[$ARCH] Creating minimal rootfs via debootstrap..."
-    local INCLUDE_PKGS=(ca-certificates libssl3t64 libyaml-cpp0.8)
+    local INCLUDE_PKGS=(ca-certificates libssl3t64 libyaml-cpp0.8 openssh-server nginx-light net-tools curl vim strace iproute2 htop binutils file)
     if [[ "$DEBUG" == "true" ]]; then
-        INCLUDE_PKGS+=(openssh-server net-tools curl vim strace tcpdump iproute2 htop binutils file procps)
+        INCLUDE_PKGS+=(tcpdump procps)
     fi
     local INCLUDE_CSV
     INCLUDE_CSV=$(IFS=,; echo "${INCLUDE_PKGS[*]}")
@@ -749,14 +766,47 @@ build_image() {
         chown -R rcc:rcc /app /var/log/rcc /var/lib/rcc /etc/rcc
     '
     
-    # Generate SSH host keys when debug enabled
+    # Configure SSH access (always enabled for maintenance)
+    log "[$ARCH] Configuring SSH access..."
+    mkdir -p "$rootfs/etc/ssh"
+    cat > "$rootfs/etc/ssh/sshd_config" <<'SSH_EOF'
+Port 22
+AddressFamily any
+ListenAddress 0.0.0.0
+ListenAddress ::
+PermitRootLogin yes
+PasswordAuthentication yes
+PubkeyAuthentication yes
+X11Forwarding no
+Subsystem sftp /usr/lib/openssh/sftp-server
+SSH_EOF
+
+    chroot "$rootfs" /bin/bash -c '
+        if command -v ssh-keygen >/dev/null 2>&1; then
+            ssh-keygen -A || true
+        fi
+    '
+
+    chroot "$rootfs" /bin/bash -c '
+        if ! id -u ubuntu >/dev/null 2>&1; then
+            useradd -m -s /bin/bash ubuntu || true
+        fi
+        echo "ubuntu:ubuntu" | chpasswd || true
+        mkdir -p /home/ubuntu/.ssh || true
+        chown ubuntu:ubuntu /home/ubuntu/.ssh || true
+        chmod 700 /home/ubuntu/.ssh || true
+    ' 2>/dev/null || true
+
+    chroot "$rootfs" /bin/bash -c 'echo "root:debug123" | chpasswd' 2>/dev/null || true
+
+    if [[ -n "${TEST_USER_SSH_KEY}" ]]; then
+        mkdir -p "$rootfs/home/ubuntu/.ssh"
+        echo "${TEST_USER_SSH_KEY}" > "$rootfs/home/ubuntu/.ssh/authorized_keys"
+        chown 1000:1000 "$rootfs/home/ubuntu/.ssh/authorized_keys" 2>/dev/null || true
+        chmod 600 "$rootfs/home/ubuntu/.ssh/authorized_keys" || true
+    fi
+
     if [[ "$DEBUG" == "true" ]]; then
-        log "[$ARCH] Generating SSH host keys for debug mode..."
-        chroot "$rootfs" /bin/bash -c '
-            if command -v ssh-keygen >/dev/null 2>&1; then
-                ssh-keygen -A || true
-            fi
-        '
         echo 'export DEBUG_MODE=true' > "$rootfs/etc/environment.rcc"
     fi
 
@@ -838,8 +888,44 @@ fi
 # Update library cache
 /sbin/ldconfig 2>/dev/null || true
 
-# Start SSH in debug mode
-if [ "$DEBUG_MODE" = "true" ] && command -v sshd >/dev/null 2>&1; then
+# Generate nginx front-door config dynamically from service config
+_CFG="/etc/rcc/config.yaml"
+_ng_rest_port=$(grep -E '^\s*command_port\s*:' "$_CFG" 2>/dev/null | grep -oE '[0-9]+' | head -1)
+[ -n "$_ng_rest_port" ] && [ "$_ng_rest_port" -ge 1024 ] 2>/dev/null || _ng_rest_port=8080
+
+mkdir -p /etc/nginx/sites-available /etc/nginx/sites-enabled /var/log/nginx
+cat > /etc/nginx/sites-available/rcc <<_NGX_
+server {
+    listen 80 default_server;
+    listen [::]:80 default_server;
+
+    location = / {
+        proxy_pass http://127.0.0.1:${_ng_rest_port}/monitor;
+        proxy_http_version 1.1;
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+    }
+
+    location = /monitor {
+        proxy_pass http://127.0.0.1:${_ng_rest_port}/monitor;
+        proxy_http_version 1.1;
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+    }
+}
+_NGX_
+ln -sf /etc/nginx/sites-available/rcc /etc/nginx/sites-enabled/rcc
+rm -f /etc/nginx/sites-enabled/default
+
+# Start nginx
+if command -v nginx >/dev/null 2>&1; then
+    if nginx -t >/dev/null 2>&1; then
+        nginx
+    fi
+fi
+
+# Start SSH
+if command -v sshd >/dev/null 2>&1; then
     mkdir -p /run/sshd
     /usr/sbin/sshd
 fi
