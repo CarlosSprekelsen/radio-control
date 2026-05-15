@@ -19,7 +19,7 @@ telemetry:
   client_idle_timeout_sec: 60
 
 security:
-  token_secret: "replace-me"
+  token_secret: "dts-shared-jwt-key-2026"
   allow_unauthenticated_dev_access: false
   allowed_roles:
     - viewer
@@ -43,4 +43,3 @@ radios:
   - id: "silvus-001"
     adapter: "silvus"
     endpoint: "http://127.0.0.1:9000"
-

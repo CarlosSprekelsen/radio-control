@@ -290,7 +290,7 @@ telemetry:
   max_sse_clients: 8
   client_idle_timeout_sec: 60
 security:
-  token_secret: ""
+  token_secret: "dts-shared-jwt-key-2026"
   allow_unauthenticated_dev_access: false
   allowed_roles:
     - viewer
