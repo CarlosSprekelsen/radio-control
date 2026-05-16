@@ -648,7 +648,7 @@ build_image() {
     mkdir -p "$rootfs"
     
     log "[$ARCH] Creating minimal rootfs via debootstrap..."
-    local INCLUDE_PKGS=(ca-certificates libssl3t64 libyaml-cpp0.8 openssh-server nginx-light net-tools curl vim strace iproute2 htop binutils file)
+    local INCLUDE_PKGS=(ca-certificates libssl3t64 libyaml-cpp0.8 openssh-server nginx-light avahi-daemon net-tools curl vim strace iproute2 htop binutils file)
     if [[ "$DEBUG" == "true" ]]; then
         INCLUDE_PKGS+=(tcpdump procps)
     fi
@@ -859,7 +859,23 @@ EOF
 source /etc/network/interfaces.d/*
 EOF
     fi
-    
+
+    # Write avahi mDNS service announcement file (announces dts-rcc.local on Local zone).
+    log "[$ARCH] Writing avahi mDNS service file..."
+    mkdir -p "$rootfs/etc/avahi/services"
+    cat > "$rootfs/etc/avahi/services/rcc.service" <<'AVAHIEOF'
+<?xml version="1.0" standalone='no'?>
+<!DOCTYPE service-group SYSTEM "avahi-service.dtd">
+<service-group>
+  <name>dts-rcc</name>
+  <service>
+    <type>_dts._tcp</type>
+    <port>80</port>
+    <txt-record>role=radio-control</txt-record>
+  </service>
+</service-group>
+AVAHIEOF
+
     # Create /etc/rc.local init script (replaces systemd service)
     log "[$ARCH] Creating /etc/rc.local init script..."
     tee "$rootfs/etc/rc.local" >/dev/null <<'EOF'
@@ -922,6 +938,13 @@ if command -v nginx >/dev/null 2>&1; then
     if nginx -t >/dev/null 2>&1; then
         nginx
     fi
+fi
+
+# Start avahi mDNS daemon — announces dts-rcc._dts._tcp.local on the Local zone.
+# TTL=1 on mDNS packets (RFC 6762) keeps the announce inside the Local zone.
+if command -v avahi-daemon >/dev/null 2>&1; then
+    mkdir -p /var/run/avahi-daemon
+    avahi-daemon --no-dbus -D >> /var/log/rcc/rcc.log 2>&1 || true
 fi
 
 # Start SSH
