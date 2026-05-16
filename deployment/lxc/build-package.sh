@@ -36,6 +36,36 @@ log() { echo -e "${GREEN}[BUILD]${NC} $1"; }
 warn() { echo -e "${YELLOW}[WARN]${NC} $1"; }
 error() { echo -e "${RED}[ERROR]${NC} $1"; exit 1; }
 
+# Inject /usr/sbin/policy-rc.d (exit 101) into a debootstrap tarball so that
+# `debootstrap --unpack-tarball`'s second stage runs `dpkg --configure -a`
+# with service starts disabled. Idempotent.
+# See services/mcast-stimulator/open-issues/[Open]2026-05-16-issue-05-*.md
+inject_policy_rc_d() {
+    local tarball="$1"
+    [[ -f "$tarball" ]] || return 0
+    local tmpdir
+    tmpdir="$(mktemp -d "${TMPDIR:-/var/tmp}/policy-rc-inject.XXXXXX")" || return 1
+    if ! tar -xzf "$tarball" -C "$tmpdir" 2>/dev/null; then
+        warn "inject_policy_rc_d: failed to extract $tarball"
+        rm -rf "$tmpdir"
+        return 1
+    fi
+    mkdir -p "$tmpdir/usr/sbin"
+    cat > "$tmpdir/usr/sbin/policy-rc.d" <<'POLEOF'
+#!/bin/sh
+# Injected by setup.sh: forbid service starts during dpkg configure in chroot.
+exit 101
+POLEOF
+    chmod 0755 "$tmpdir/usr/sbin/policy-rc.d"
+    if ! tar -czf "${tarball}.tmp" -C "$tmpdir" .; then
+        warn "inject_policy_rc_d: failed to repack $tarball"
+        rm -rf "$tmpdir" "${tarball}.tmp"
+        return 1
+    fi
+    mv -f "${tarball}.tmp" "$tarball"
+    rm -rf "$tmpdir"
+}
+
 TOTAL_CORES="$(nproc 2>/dev/null || echo 1)"
 DEFAULT_BUILD_JOBS="$TOTAL_CORES"
 if (( TOTAL_CORES > 2 )); then DEFAULT_BUILD_JOBS=$((TOTAL_CORES - 2)); fi
@@ -697,6 +727,8 @@ build_image() {
             mkdir -p "$tarball_dir"
             if [[ -f "$base_tarball" ]]; then
                 log "[$ARCH] Reusing debootstrap tarball: $base_tarball"
+                inject_policy_rc_d "$base_tarball" \
+                    || error "[$ARCH] failed to inject policy-rc.d into cached tarball"
                 _run_debootstrap --unpack-tarball="$base_tarball" noble "$rootfs" "$mirror_url" \
                     || error "[$ARCH] debootstrap --unpack-tarball failed"
             else
@@ -704,6 +736,8 @@ build_image() {
                 _run_debootstrap --make-tarball="$base_tarball" noble "$rootfs" "$mirror_url" \
                     || error "[$ARCH] debootstrap --make-tarball failed"
                 [[ -f "$base_tarball" ]] || error "[$ARCH] debootstrap did not produce tarball at $base_tarball"
+                inject_policy_rc_d "$base_tarball" \
+                    || error "[$ARCH] failed to inject policy-rc.d into fresh tarball"
                 log "[$ARCH] Tarball created; installing rootfs from tarball..."
                 _run_debootstrap --unpack-tarball="$base_tarball" noble "$rootfs" "$mirror_url" \
                     || error "[$ARCH] debootstrap --unpack-tarball (second pass) failed"
