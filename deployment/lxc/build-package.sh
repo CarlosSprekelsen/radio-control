@@ -50,6 +50,9 @@ inject_policy_rc_d() {
         rm -rf "$tmpdir"
         return 1
     fi
+
+    # 1. policy-rc.d (defense in depth — blocks invoke-rc.d from actually
+    #    starting services in the chroot).
     mkdir -p "$tmpdir/usr/sbin"
     cat > "$tmpdir/usr/sbin/policy-rc.d" <<'POLEOF'
 #!/bin/sh
@@ -57,6 +60,33 @@ inject_policy_rc_d() {
 exit 101
 POLEOF
     chmod 0755 "$tmpdir/usr/sbin/policy-rc.d"
+
+    # 2. Patch any nginx_*.deb's postinst to replace `exit $?` with `exit 0`.
+    #    Ubuntu noble's `nginx` meta postinst does `invoke-rc.d nginx start ||
+    #    exit $?` which would propagate policy-rc.d's 101 as a dpkg configure
+    #    failure. nginx-light hard-depends on the nginx meta so we can't avoid
+    #    installing it. See open-issues/[Open]2026-05-16-issue-05-*.md.
+    local deb work
+    for deb in "$tmpdir"/var/cache/apt/archives/nginx_*.deb; do
+        [[ -f "$deb" ]] || continue
+        work="$(mktemp -d "${TMPDIR:-/var/tmp}/nginx-deb-patch.XXXXXX")" || continue
+        if dpkg-deb -x "$deb" "$work/contents" 2>/dev/null \
+           && dpkg-deb -e "$deb" "$work/contents/DEBIAN" 2>/dev/null \
+           && [[ -f "$work/contents/DEBIAN/postinst" ]]; then
+            sed -i \
+                -e 's/^\([[:space:]]*\)exit \$?[[:space:]]*$/\1exit 0/g' \
+                -e 's/|| exit \$?/|| exit 0/g' \
+                "$work/contents/DEBIAN/postinst"
+            if dpkg-deb --root-owner-group --build "$work/contents" "$work/new.deb" >/dev/null 2>&1; then
+                mv -f "$work/new.deb" "$deb"
+                log "Patched $(basename "$deb") postinst (exit \$? -> exit 0)"
+            else
+                warn "Failed to repack $(basename "$deb"); leaving original"
+            fi
+        fi
+        rm -rf "$work"
+    done
+
     if ! tar -czf "${tarball}.tmp" -C "$tmpdir" .; then
         warn "inject_policy_rc_d: failed to repack $tarball"
         rm -rf "$tmpdir" "${tarball}.tmp"
@@ -678,7 +708,7 @@ build_image() {
     mkdir -p "$rootfs"
     
     log "[$ARCH] Creating minimal rootfs via debootstrap..."
-    local INCLUDE_PKGS=(ca-certificates libssl3t64 libyaml-cpp0.8 openssh-server nginx-light avahi-daemon net-tools curl vim strace iproute2 htop binutils file)
+    local INCLUDE_PKGS=(ca-certificates libssl3t64 libyaml-cpp0.8 openssh-server nginx-light avahi-daemon dbus net-tools curl vim strace iproute2 htop binutils file)
     if [[ "$DEBUG" == "true" ]]; then
         INCLUDE_PKGS+=(tcpdump procps)
     fi
