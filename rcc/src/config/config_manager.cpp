@@ -197,6 +197,21 @@ std::vector<RadioEntry> loadRadioEntries(const YAML::Node& node) {
         }
         radio.description = dts::common::config::optionalString(
             entryNode["description"], "radios[].description");
+        radio.min_power_dbm = optionalScalar<double>(
+            entryNode, "min_power_dbm", "radios[].min_power_dbm");
+        radio.max_power_dbm = optionalScalar<double>(
+            entryNode, "max_power_dbm", "radios[].max_power_dbm");
+
+        if (radio.min_power_dbm.has_value() != radio.max_power_dbm.has_value()) {
+            throw std::runtime_error(
+                "Radio power overrides require both 'min_power_dbm' and 'max_power_dbm'");
+        }
+        if (radio.min_power_dbm && (*radio.min_power_dbm < 0.0 ||
+                                    *radio.max_power_dbm > 39.0 ||
+                                    *radio.min_power_dbm > *radio.max_power_dbm)) {
+            throw std::runtime_error(
+                "Radio power overrides must satisfy 0 <= min_power_dbm <= max_power_dbm <= 39");
+        }
 
         if (radio.id.empty() || radio.adapter.empty() || radio.endpoint.empty()) {
             throw std::runtime_error(

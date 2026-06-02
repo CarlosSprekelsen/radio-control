@@ -4,6 +4,7 @@ project(silvus-mock LANGUAGES CXX)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
+option(SILVUS_MOCK_BUILD_TESTS "Build Silvus mock contract tests" ON)
 
 find_package(Threads REQUIRED)
 
@@ -23,3 +24,18 @@ add_executable(silvus-mock
 )
 
 target_link_libraries(silvus-mock PRIVATE Threads::Threads)
+
+if(SILVUS_MOCK_BUILD_TESTS)
+    enable_testing()
+    add_executable(silvus-mock-contract-test
+        test/silvus_mock_contract_test.cpp
+        src/silvus_mock.cpp
+        src/silvus_mock.hpp
+    )
+    target_include_directories(silvus-mock-contract-test PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src
+        ${CMAKE_SOURCE_DIR}/../../../libs/dts-common/include
+    )
+    target_link_libraries(silvus-mock-contract-test PRIVATE Threads::Threads)
+    add_test(NAME silvus-mock-contract-test COMMAND silvus-mock-contract-test)
+endif()

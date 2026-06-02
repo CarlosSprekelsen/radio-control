@@ -2,6 +2,9 @@
 
 #include "rcc/adapter/silvus_adapter.hpp"
 
+#include <optional>
+#include <utility>
+
 namespace rcc::radio {
 
 RadioManager::RadioManager([[maybe_unused]] asio::io_context& io,
@@ -72,8 +75,12 @@ void RadioManager::load_from_config(const config::Config& config) {
     for (const auto& radio : config.radios) {
         adapter::AdapterPtr adapter;
         if (radio.adapter == "silvus") {
+            std::optional<std::pair<double, double>> powerDbmRange;
+            if (radio.min_power_dbm && radio.max_power_dbm) {
+                powerDbmRange = std::make_pair(*radio.min_power_dbm, *radio.max_power_dbm);
+            }
             adapter = std::make_shared<adapter::SilvusAdapter>(
-                radio.id, radio.endpoint);
+                radio.id, radio.endpoint, powerDbmRange);
         } else {
             continue;  // Unsupported adapter type
         }

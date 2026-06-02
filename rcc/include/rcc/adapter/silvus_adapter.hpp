@@ -2,13 +2,17 @@
 
 #include "rcc/adapter/radio_adapter.hpp"
 #include <mutex>
+#include <optional>
 #include <string>
+#include <utility>
 
 namespace rcc::adapter {
 
 class SilvusAdapter final : public IRadioAdapter {
 public:
-    SilvusAdapter(std::string id, std::string endpoint);
+    SilvusAdapter(std::string id,
+                  std::string endpoint,
+                  std::optional<std::pair<double, double>> configured_power_dbm_range = std::nullopt);
 
     std::string id() const override;
     CapabilityInfo capabilities() const override;

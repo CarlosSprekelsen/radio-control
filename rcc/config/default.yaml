@@ -43,3 +43,7 @@ radios:
   - id: "silvus-001"
     adapter: "silvus"
     endpoint: "http://127.0.0.1:9000"
+    # StreamCaster 4000 deployment/lab ceiling. Keep 0..39 unless a specific
+    # radio/license profile has been validated with a lower maximum.
+    min_power_dbm: 0
+    max_power_dbm: 39

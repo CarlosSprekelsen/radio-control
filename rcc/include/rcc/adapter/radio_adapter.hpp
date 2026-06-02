@@ -2,6 +2,7 @@
 
 #include "rcc/common/types.hpp"
 #include <memory>
+#include <optional>
 #include <string>
 #include <utility>
 #include <vector>
@@ -11,6 +12,9 @@ namespace rcc::adapter {
 struct CapabilityInfo {
     std::vector<double> supported_frequencies_mhz;
     std::pair<double, double> power_range_watts{0.0, 0.0};
+    std::optional<bool> enable_max_power;
+    bool manual_power_control_available{true};
+    std::string power_range_source{"vendor_default"};
 };
 
 class IRadioAdapter {

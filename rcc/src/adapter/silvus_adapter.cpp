@@ -11,6 +11,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cctype>
+#include <iomanip>
 #include <optional>
 #include <sstream>
 #include <string>
@@ -201,6 +202,57 @@ std::optional<std::string> sendHttpPost(const std::string& endpoint,
     return body;
 }
 
+std::string formatSilvusNumber(double value) {
+    std::ostringstream ss;
+    ss << std::fixed << std::setprecision(6) << value;
+    std::string text = ss.str();
+    while (text.size() > 1 && text.back() == '0') {
+        text.pop_back();
+    }
+    if (!text.empty() && text.back() == '.') {
+        text.pop_back();
+    }
+    return text;
+}
+
+double dbmToWatts(double dbm) {
+    return std::pow(10.0, dbm / 10.0) / 1000.0;
+}
+
+void addFrequencySpec(std::vector<double>& freqs, const std::string& text) {
+    const auto firstColon = text.find(':');
+    if (firstColon == std::string::npos) {
+        try {
+            freqs.push_back(std::stod(text));
+        } catch (...) {
+        }
+        return;
+    }
+
+    const auto secondColon = text.find(':', firstColon + 1);
+    if (secondColon == std::string::npos || text.find(':', secondColon + 1) != std::string::npos) {
+        return;
+    }
+
+    try {
+        const double start = std::stod(text.substr(0, firstColon));
+        const double step = std::stod(text.substr(firstColon + 1, secondColon - firstColon - 1));
+        const double end = std::stod(text.substr(secondColon + 1));
+        if (step <= 0.0 || end < start) {
+            return;
+        }
+
+        const auto count = static_cast<int>(std::floor(((end - start) / step) + 0.5));
+        for (int i = 0; i <= count; ++i) {
+            const double value = start + (step * i);
+            if (value <= end + 0.000001) {
+                freqs.push_back(value);
+            }
+        }
+    } catch (...) {
+    }
+}
+
 std::vector<double> parseSupportedFrequencies(const nlohmann::json& response) {
     std::vector<double> freqs;
     if (!response.contains("result") || !response["result"].is_array()) {
@@ -218,22 +270,7 @@ std::vector<double> parseSupportedFrequencies(const nlohmann::json& response) {
             if (!entry.is_string()) {
                 continue;
             }
-            const auto text = entry.get<std::string>();
-            const auto colon = text.find(':');
-            if (colon == std::string::npos) {
-                try {
-                    freqs.push_back(std::stod(text));
-                } catch (...) {
-                }
-            } else {
-                const auto first = text.substr(0, colon);
-                const auto last = text.substr(text.rfind(':') + 1);
-                try {
-                    freqs.push_back(std::stod(first));
-                    freqs.push_back(std::stod(last));
-                } catch (...) {
-                }
-            }
+            addFrequencySpec(freqs, entry.get<std::string>());
         }
     }
 
@@ -259,6 +296,35 @@ std::optional<int> parsePowerResult(const nlohmann::json& response) {
     return std::nullopt;
 }
 
+std::optional<bool> parseBooleanResult(const nlohmann::json& response) {
+    if (!response.contains("result") || !response["result"].is_array() || response["result"].empty()) {
+        return std::nullopt;
+    }
+
+    const auto& result = response["result"][0];
+    if (result.is_boolean()) {
+        return result.get<bool>();
+    }
+    if (result.is_number_integer()) {
+        return result.get<int>() != 0;
+    }
+    if (!result.is_string()) {
+        return std::nullopt;
+    }
+
+    std::string text = result.get<std::string>();
+    std::transform(text.begin(), text.end(), text.begin(), [](unsigned char c) {
+        return static_cast<char>(std::tolower(c));
+    });
+    if (text == "1" || text == "true" || text == "enabled" || text == "on") {
+        return true;
+    }
+    if (text == "0" || text == "false" || text == "disabled" || text == "off") {
+        return false;
+    }
+    return std::nullopt;
+}
+
 std::optional<double> parseFrequencyResult(const nlohmann::json& response) {
     if (!response.contains("result") || !response["result"].is_array() || response["result"].empty()) {
         return std::nullopt;
@@ -276,6 +342,31 @@ std::optional<double> parseFrequencyResult(const nlohmann::json& response) {
     return std::nullopt;
 }
 
+std::optional<bool> readEnableMaxPower(const std::string& endpoint) {
+    nlohmann::json request = {
+        {"jsonrpc", "2.0"},
+        {"id", "enable_max_power"},
+        {"method", "enable_max_power"}
+    };
+
+    std::string error;
+    const auto responseBody = sendHttpPost(endpoint, request.dump(), error);
+    if (!responseBody) {
+        return std::nullopt;
+    }
+
+    nlohmann::json response;
+    try {
+        response = nlohmann::json::parse(*responseBody);
+    } catch (...) {
+        return std::nullopt;
+    }
+    if (response.contains("error")) {
+        return std::nullopt;
+    }
+    return parseBooleanResult(response);
+}
+
 std::optional<int> findChannelIndex(const CapabilityInfo& caps, double frequencyMhz) {
     for (size_t i = 0; i < caps.supported_frequencies_mhz.size(); ++i) {
         if (std::abs(caps.supported_frequencies_mhz[i] - frequencyMhz) < 0.001) {
@@ -287,11 +378,22 @@ std::optional<int> findChannelIndex(const CapabilityInfo& caps, double frequency
 
 }  // namespace
 
-SilvusAdapter::SilvusAdapter(std::string id, std::string endpoint)
+SilvusAdapter::SilvusAdapter(std::string id,
+                             std::string endpoint,
+                             std::optional<std::pair<double, double>> configured_power_dbm_range)
     : id_(std::move(id))
     , endpoint_(std::move(endpoint)) {
     capabilities_.supported_frequencies_mhz = {2412.0, 2437.0, 2462.0};
-    capabilities_.power_range_watts          = {0.1, 5.0};
+    if (configured_power_dbm_range) {
+        capabilities_.power_range_watts = {
+            dbmToWatts(configured_power_dbm_range->first),
+            dbmToWatts(configured_power_dbm_range->second)
+        };
+        capabilities_.power_range_source = "configured";
+    } else {
+        capabilities_.power_range_watts = {dbmToWatts(0.0), dbmToWatts(39.0)};
+        capabilities_.power_range_source = "vendor_default";
+    }
     state_.status = common::RadioStatus::Offline;
 }
 
@@ -334,6 +436,10 @@ common::CommandResult SilvusAdapter::connect() {
     if (!freqs.empty()) {
         capabilities_.supported_frequencies_mhz = freqs;
     }
+    if (const auto enableMaxPower = readEnableMaxPower(endpoint_)) {
+        capabilities_.enable_max_power = *enableMaxPower;
+        capabilities_.manual_power_control_available = !*enableMaxPower;
+    }
 
     state_.status = common::RadioStatus::Ready;
     return {common::CommandResultCode::Ok, {}, std::nullopt};
@@ -341,6 +447,16 @@ common::CommandResult SilvusAdapter::connect() {
 
 common::CommandResult SilvusAdapter::set_power(double watts) {
     std::lock_guard<std::mutex> lock(mutex_);
+
+    if (const auto enableMaxPower = readEnableMaxPower(endpoint_)) {
+        capabilities_.enable_max_power = *enableMaxPower;
+        capabilities_.manual_power_control_available = !*enableMaxPower;
+    }
+    if (!capabilities_.manual_power_control_available) {
+        return {common::CommandResultCode::Busy,
+                "Manual power control is unavailable while enable_max_power=1",
+                std::optional<std::string>{"{\"enable_max_power\":true}"}};
+    }
 
     if (watts < capabilities_.power_range_watts.first ||
         watts > capabilities_.power_range_watts.second) {
@@ -386,12 +502,17 @@ common::CommandResult SilvusAdapter::set_channel(int channel_index,
         return {common::CommandResultCode::InvalidRange,
                 "Invalid channel or frequency", std::nullopt};
     }
+    if (!capabilities_.supported_frequencies_mhz.empty() &&
+        !findChannelIndex(capabilities_, frequency_mhz)) {
+        return {common::CommandResultCode::InvalidRange,
+                "Frequency outside supported profile", std::nullopt};
+    }
 
     nlohmann::json request = {
         {"jsonrpc", "2.0"},
         {"id", "1"},
         {"method", "freq"},
-        {"params", {std::to_string(frequency_mhz)}}
+        {"params", {formatSilvusNumber(frequency_mhz)}}
     };
 
     std::string error;
@@ -411,7 +532,7 @@ common::CommandResult SilvusAdapter::set_channel(int channel_index,
         return {common::CommandResultCode::InvalidRange, response["error"].dump(), std::nullopt};
     }
 
-    state_.channel_index = channel_index;
+    state_.channel_index = findChannelIndex(capabilities_, frequency_mhz).value_or(channel_index);
     state_.status = common::RadioStatus::Ready;
     return {common::CommandResultCode::Ok, {}, std::nullopt};
 }
@@ -441,7 +562,7 @@ common::CommandResult SilvusAdapter::refresh_state() {
     }
 
     if (const auto powerDbm = parsePowerResult(powerResponse)) {
-        state_.power_watts = std::pow(10.0, *powerDbm / 10.0) / 1000.0;
+        state_.power_watts = dbmToWatts(*powerDbm);
     } else {
         state_.power_watts.reset();
     }
@@ -474,6 +595,10 @@ common::CommandResult SilvusAdapter::refresh_state() {
         }
     } else {
         state_.channel_index.reset();
+    }
+    if (const auto enableMaxPower = readEnableMaxPower(endpoint_)) {
+        capabilities_.enable_max_power = *enableMaxPower;
+        capabilities_.manual_power_control_available = !*enableMaxPower;
     }
 
     state_.status = common::RadioStatus::Ready;

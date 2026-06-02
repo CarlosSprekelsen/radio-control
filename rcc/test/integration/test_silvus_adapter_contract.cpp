@@ -20,7 +20,7 @@ std::string makeSupportedFrequenciesResponse() {
 }
 
 std::string makeOkResponse() {
-    return R"({"jsonrpc":"2.0","id":"1","result":[]})";
+    return R"({"jsonrpc":"2.0","id":"1","result":[""]})";
 }
 
 std::string makePowerResponse(int dbm) {
@@ -41,6 +41,15 @@ std::string makeFrequencyResponse(double mhz) {
     return response.dump();
 }
 
+std::string makeEnableMaxPowerResponse(bool enabled) {
+    nlohmann::json response = {
+        {"jsonrpc", "2.0"},
+        {"id", "enable_max_power"},
+        {"result", {enabled ? "1" : "0"}}
+    };
+    return response.dump();
+}
+
 }  // namespace
 
 TEST(SilvusAdapterContract, ConnectSetPowerRefreshStateAgainstFakeRadio) {
@@ -53,6 +62,9 @@ TEST(SilvusAdapterContract, ConnectSetPowerRefreshStateAgainstFakeRadio) {
     server.setHandler([&](const std::string& request) {
         if (request.find("\"supported_frequency_profiles\"") != std::string::npos) {
             return rcc::test::RadioResponse{200, makeSupportedFrequenciesResponse()};
+        }
+        if (request.find("\"enable_max_power\"") != std::string::npos) {
+            return rcc::test::RadioResponse{200, makeEnableMaxPowerResponse(false)};
         }
         if (request.find("\"power_dBm\"") != std::string::npos) {
             if (request.find("\"params\"") != std::string::npos) {

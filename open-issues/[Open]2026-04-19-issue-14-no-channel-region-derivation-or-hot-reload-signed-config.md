@@ -15,7 +15,7 @@ Architecture §13 "Channel Index -> Frequency Mapping" requires:
 Architecture §"Configuration (Region/Channel Policy)" further requires a "signed region config" and hot-reload with signature verification.
 
 Current state:
-- [silvus_adapter.cpp](services/radio-control/rcc/src/adapter/silvus_adapter.cpp) hard-codes `{2412, 2437, 2462}` MHz as the initial capability and uses whatever `supported_frequency_profiles` returns at `connect()` time.
+- [silvus_adapter.cpp](services/radio-control/rcc/src/adapter/silvus_adapter.cpp) expands Silvus `supported_frequency_profiles` range specs at `connect()` time, but still uses the resulting radio capability set directly.
 - There is no region config file, no derivation step, no signature check, and no hot-reload — `ConfigManager` reads YAML once at startup.
 
 ## Why it matters

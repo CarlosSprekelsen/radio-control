@@ -9,15 +9,16 @@ using json = nlohmann::json;
 SilvusMock::SilvusMock()
     : current_frequency_("4700.0"),
       current_power_dBm_(30),
+      enable_max_power_(false),
       max_link_distance_m_(10000),
       gps_lat_("0.0"),
       gps_lon_("0.0"),
       gps_alt_("0.0"),
-      gps_mode_("enabled"),
+      gps_mode_("unlocked"),
       gps_time_(std::to_string(std::chrono::system_clock::to_time_t(std::chrono::system_clock::now()))),
       blackout_until_(std::chrono::steady_clock::time_point()),
       soft_boot_duration_(30),
-      power_change_duration_(5),
+      power_change_duration_(0),
       radio_reset_duration_(60) {
     profiles_ = {
         {
@@ -115,6 +116,24 @@ double SilvusMock::to_mw(int dbm) {
     return std::pow(10.0, static_cast<double>(dbm) / 10.0);
 }
 
+bool SilvusMock::parse_double_in_range(const json& value, double low, double high) {
+    double parsed;
+    try {
+        parsed = value.is_number() ? value.get<double>() : std::stod(value.get<std::string>());
+    } catch (...) {
+        return false;
+    }
+    return parsed >= low && parsed <= high;
+}
+
+bool SilvusMock::is_read_only_with_params(const std::string& method, const json& params, const json& id, json& response) const {
+    if (params.empty()) {
+        return false;
+    }
+    response = make_error(-32602, "INVALID_RANGE", method + " is read-only", id);
+    return true;
+}
+
 json SilvusMock::make_error(int code, const std::string& message, const json& id) const {
     json error = json{{"code", code}, {"message", message}};
     return json{{"jsonrpc", "2.0"}, {"error", error}, {"id", id}};
@@ -164,9 +183,7 @@ json SilvusMock::handle_jsonrpc(const json& req) {
         std::lock_guard lock(mutex_);
         std::cout << "[silvus-mock] handle_jsonrpc after lock" << std::endl;
         std::cout << "[silvus-mock] handle_jsonrpc availability=" << is_available() << std::endl;
-        bool skip = (method != "max_link_distance" && method != "read_power_dBm" && method != "read_power_mw");
-        std::cout << "[silvus-mock] handle_jsonrpc skip=" << skip << std::endl;
-        if (!is_available() && skip) {
+        if (!is_available()) {
             std::cout << "[silvus-mock] handle_jsonrpc returning UNAVAILABLE" << std::endl;
             auto result = make_error(-32000, "UNAVAILABLE", id);
             std::cout << "[silvus-mock] UNAVAILABLE result=" << result.dump() << std::endl;
@@ -202,22 +219,54 @@ json SilvusMock::handle_jsonrpc(const json& req) {
             if (power < 0 || power > 39) {
                 return make_error(-32002, "INVALID_RANGE", id);
             }
-            current_power_dBm_ = power;
-            blackout_until_ = std::chrono::steady_clock::now() + power_change_duration_;
+            if (!enable_max_power_) {
+                current_power_dBm_ = power;
+            }
+            if (power_change_duration_.count() > 0) {
+                blackout_until_ = std::chrono::steady_clock::now() + power_change_duration_;
+            }
             auto response = make_result(json::array({""}), id);
             std::cout << "[silvus-mock] power_dBm response=" << response.dump() << std::endl;
             return response;
         }
 
+        if (method == "enable_max_power") {
+            if (params.empty()) {
+                return make_result(json::array({enable_max_power_ ? "1" : "0"}), id);
+            }
+            std::string value = params[0].is_string() ? params[0].get<std::string>() : params[0].dump();
+            if (value == "1" || value == "true" || value == "on") {
+                enable_max_power_ = true;
+                return make_result(json::array({""}), id);
+            }
+            if (value == "0" || value == "false" || value == "off") {
+                enable_max_power_ = false;
+                return make_result(json::array({""}), id);
+            }
+            return make_error(-32002, "INVALID_RANGE", "enable_max_power expects 0 or 1", id);
+        }
+
         if (method == "supported_frequency_profiles") {
+            json readOnlyError;
+            if (is_read_only_with_params(method, params, id, readOnlyError)) {
+                return readOnlyError;
+            }
             return make_result(profiles_, id);
         }
 
         if (method == "read_power_dBm") {
+            json readOnlyError;
+            if (is_read_only_with_params(method, params, id, readOnlyError)) {
+                return readOnlyError;
+            }
             return make_result(json::array({std::to_string(current_power_dBm_)}), id);
         }
 
         if (method == "read_power_mw") {
+            json readOnlyError;
+            if (is_read_only_with_params(method, params, id, readOnlyError)) {
+                return readOnlyError;
+            }
             return make_result(json::array({std::to_string(static_cast<int>(std::round(to_mw(current_power_dBm_))))}), id);
         }
 
@@ -231,7 +280,7 @@ json SilvusMock::handle_jsonrpc(const json& req) {
             } catch (...) {
                 return make_error(-32002, "INVALID_RANGE", "Invalid distance", id);
             }
-            if (value < 0 || value > 100000) {
+            if (value < 0 || value > 1000000) {
                 return make_error(-32002, "INVALID_RANGE", "Distance out of range", id);
             }
             max_link_distance_m_ = value;
@@ -240,10 +289,15 @@ json SilvusMock::handle_jsonrpc(const json& req) {
 
         if (method == "gps_coordinates") {
             if (params.empty()) {
-                return make_result(json{{"lat", gps_lat_}, {"lon", gps_lon_}, {"alt", gps_alt_}}, id);
+                return make_result(json::array({gps_lat_, gps_lon_, gps_alt_}), id);
             }
             if (params.size() != 3) {
                 return make_error(-32602, "INVALID_RANGE", "gps_coordinates requires three parameters", id);
+            }
+            if (!parse_double_in_range(params[0], -90.0, 90.0) ||
+                !parse_double_in_range(params[1], -180.0, 180.0) ||
+                !parse_double_in_range(params[2], -12400.0, 42000.0)) {
+                return make_error(-32002, "INVALID_RANGE", "GPS coordinate out of range", id);
             }
             gps_lat_ = params[0].is_string() ? params[0].get<std::string>() : params[0].dump();
             gps_lon_ = params[1].is_string() ? params[1].get<std::string>() : params[1].dump();
@@ -252,24 +306,25 @@ json SilvusMock::handle_jsonrpc(const json& req) {
         }
 
         if (method == "gps_mode") {
-            if (params.empty()) {
-                return make_result(json{{"mode", gps_mode_}}, id);
+            json readOnlyError;
+            if (is_read_only_with_params(method, params, id, readOnlyError)) {
+                return readOnlyError;
             }
-            gps_mode_ = params[0].is_string() ? params[0].get<std::string>() : params[0].dump();
-            return make_result(json::array({""}), id);
+            return make_result(json::array({gps_mode_}), id);
         }
 
         if (method == "gps_time") {
-            if (params.empty()) {
-                return make_result(json::array({gps_time_}), id);
+            json readOnlyError;
+            if (is_read_only_with_params(method, params, id, readOnlyError)) {
+                return readOnlyError;
             }
-            gps_time_ = params[0].is_string() ? params[0].get<std::string>() : params[0].dump();
-            return make_result(json::array({""}), id);
+            return make_result(json::array({gps_time_}), id);
         }
 
         if (method == "zeroize") {
             current_frequency_ = "2490.0";
             current_power_dBm_ = 30;
+            enable_max_power_ = false;
             blackout_until_ = std::chrono::steady_clock::time_point();
             return make_result(json::array({""}), id);
         }
@@ -282,6 +337,7 @@ json SilvusMock::handle_jsonrpc(const json& req) {
         if (method == "factory_reset") {
             current_frequency_ = "2490.0";
             current_power_dBm_ = 30;
+            enable_max_power_ = false;
             return make_result(json::array({""}), id);
         }
 
@@ -300,6 +356,7 @@ json SilvusMock::get_status() const {
     return json{
         {"frequency", current_frequency_},
         {"power_dBm", current_power_dBm_},
+        {"enable_max_power", enable_max_power_},
         {"available", is_available()},
         {"blackoutUntil", remaining},
         {"max_link_distance_m", max_link_distance_m_},

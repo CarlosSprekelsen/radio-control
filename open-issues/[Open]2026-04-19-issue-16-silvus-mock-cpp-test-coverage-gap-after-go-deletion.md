@@ -3,7 +3,7 @@
 **Date:** 2026-04-19
 **Issue:** 16
 **Severity:** Medium
-**Status:** Open
+**Status:** Open, partially mitigated 2026-06-02
 
 ## Context
 
@@ -19,12 +19,17 @@ The C++ mock currently has **zero automated tests**. The deleted Go mock contain
 - JSON-RPC envelope validators and golden fixtures
 - Configurability via YAML/env (C++ mock is fully hardcoded)
 
+2026-06-02 progress: `silvus-mock/` now has a CMake/CTest contract test that
+directly exercises the reduced ICD response shapes and validation rules. The
+remaining gap is broader process coverage: executable smoke tests, TCP
+maintenance coverage, configurable fixtures, and state-machine edge cases.
+
 ## What is acceptable
 
 For RCC E2E and integration testing, the C++ mock is sufficient because:
 - RCC only consumes the HTTP JSON-RPC surface (`/streamscape_api`)
 - All required methods are implemented with correct response shapes
-- Blackout behavior (soft-boot after freq/power change, reset blackout) is present
+- Blackout behavior (soft-boot after `freq` change, reset blackout) is present
 
 ## What should be added (priority order)
 
@@ -35,7 +40,7 @@ For RCC E2E and integration testing, the C++ mock is sufficient because:
 
 ## Acceptance Criteria
 
-- [ ] `ctest --test-dir build` in `silvus-mock/` runs at least one validation test.
+- [x] `ctest --test-dir build` in `silvus-mock/` runs at least one validation test target.
 - [ ] No regression in RCC integration tests (`test_silvus_adapter_contract`).
 
 ## References

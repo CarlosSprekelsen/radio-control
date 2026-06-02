@@ -34,6 +34,8 @@ struct RadioEntry {
     std::string adapter;
     std::string endpoint;
     std::optional<std::string> description;
+    std::optional<double> min_power_dbm;
+    std::optional<double> max_power_dbm;
 };
 
 struct TimingProfile {

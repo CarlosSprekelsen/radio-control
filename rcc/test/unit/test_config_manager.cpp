@@ -42,6 +42,8 @@ radios:
   - id: "radio-1"
     adapter: "silvus"
     endpoint: "http://127.0.0.1:19000"
+    min_power_dbm: 0
+    max_power_dbm: 36
 )yaml";
 
 std::filesystem::path writeTmpYaml(const std::string& content) {
@@ -69,6 +71,10 @@ TEST(ConfigManager, LoadsRequiredFields) {
     ASSERT_EQ(cfg.radios.size(),          1u);
     EXPECT_EQ(cfg.radios[0].id,           "radio-1");
     EXPECT_EQ(cfg.radios[0].adapter,      "silvus");
+    ASSERT_TRUE(cfg.radios[0].min_power_dbm.has_value());
+    ASSERT_TRUE(cfg.radios[0].max_power_dbm.has_value());
+    EXPECT_DOUBLE_EQ(*cfg.radios[0].min_power_dbm, 0.0);
+    EXPECT_DOUBLE_EQ(*cfg.radios[0].max_power_dbm, 36.0);
 }
 
 TEST(ConfigManager, DefaultNetworkValues) {
@@ -168,6 +174,41 @@ TEST(ConfigManager, ThrowsOnMissingSecuritySection) {
     const std::string yaml = R"yaml(
 container:
   id: "no-security"
+)yaml";
+    EXPECT_THROW(
+        rcc::config::ConfigManager mgr(writeTmpYaml(yaml)),
+        std::runtime_error);
+}
+
+TEST(ConfigManager, ThrowsOnPartialRadioPowerOverride) {
+    const std::string yaml = R"yaml(
+container:
+  id: "partial-power"
+security:
+  token_secret: "s"
+radios:
+  - id: "radio-1"
+    adapter: "silvus"
+    endpoint: "http://127.0.0.1:19000"
+    max_power_dbm: 36
+)yaml";
+    EXPECT_THROW(
+        rcc::config::ConfigManager mgr(writeTmpYaml(yaml)),
+        std::runtime_error);
+}
+
+TEST(ConfigManager, ThrowsOnInvalidRadioPowerOverrideRange) {
+    const std::string yaml = R"yaml(
+container:
+  id: "bad-power"
+security:
+  token_secret: "s"
+radios:
+  - id: "radio-1"
+    adapter: "silvus"
+    endpoint: "http://127.0.0.1:19000"
+    min_power_dbm: 37
+    max_power_dbm: 36
 )yaml";
     EXPECT_THROW(
         rcc::config::ConfigManager mgr(writeTmpYaml(yaml)),

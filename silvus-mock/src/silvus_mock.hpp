@@ -18,6 +18,11 @@ private:
     bool validate_frequency(const std::string& freqStr) const;
     bool frequency_matches_profile(double freq, const std::string& profile) const;
     static double to_mw(int dbm);
+    static bool parse_double_in_range(const nlohmann::json& value, double low, double high);
+    bool is_read_only_with_params(const std::string& method,
+                                  const nlohmann::json& params,
+                                  const nlohmann::json& id,
+                                  nlohmann::json& response) const;
 
     nlohmann::json make_error(int code, const std::string& message, const nlohmann::json& id) const;
     nlohmann::json make_error(int code, const std::string& message, const std::string& data, const nlohmann::json& id) const;
@@ -26,6 +31,7 @@ private:
     mutable std::mutex mutex_;
     std::string current_frequency_;
     int current_power_dBm_;
+    bool enable_max_power_;
     int max_link_distance_m_;
     std::string gps_lat_;
     std::string gps_lon_;

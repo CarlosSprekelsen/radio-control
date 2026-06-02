@@ -69,6 +69,12 @@ paths:
                   - id: "silvus-001"
                     name: "Silvus Radio 1"
                     status: "available"
+                    capabilities:
+                      minPowerDbm: 0
+                      maxPowerDbm: 36
+                      powerRangeSource: "configured"
+                      enableMaxPower: false
+                      manualPowerControl: true
         '401':
           description: Authentication required
           content:
@@ -270,9 +276,9 @@ paths:
                 powerDbm:
                   type: number
                   format: float
-                  minimum: -50
-                  maximum: 50
-                  description: Power level in dBm
+                  minimum: 0
+                  maximum: 39
+                  description: Power level in dBm; deployments may advertise narrower per-radio bounds in capabilities
                   example: 25.0
       responses:
         '200':

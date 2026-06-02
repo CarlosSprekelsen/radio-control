@@ -935,13 +935,24 @@ async function setChannel() {
 async function setPower() {
   const radioId = selectedRadioId();
   const powerDbm = Number(document.getElementById("pwrDbm").value);
+  const radio = radiosCache.find((item) => item.id === radioId) || null;
 
   if (!radioId) {
     logLine("radioConsole", "Select a radio before setting power", "warn");
     return;
   }
-  if (!Number.isFinite(powerDbm) || powerDbm < 0 || powerDbm > 39) {
-    logLine("radioConsole", "Power must be between 0 and 39 dBm", "warn");
+  if (radio?.capabilities?.manualPowerControl === false) {
+    logLine("radioConsole", "Manual power control is unavailable while max-power mode is enabled", "warn");
+    return;
+  }
+  const minPower = Number.isFinite(Number(radio?.capabilities?.minPowerDbm))
+    ? Number(radio.capabilities.minPowerDbm)
+    : 0;
+  const maxPower = Number.isFinite(Number(radio?.capabilities?.maxPowerDbm))
+    ? Number(radio.capabilities.maxPowerDbm)
+    : 39;
+  if (!Number.isFinite(powerDbm) || powerDbm < minPower || powerDbm > maxPower) {
+    logLine("radioConsole", `Power must be between ${minPower} and ${maxPower} dBm`, "warn");
     return;
   }
 

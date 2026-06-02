@@ -44,6 +44,10 @@ static nlohmann::json build_channels(const std::vector<double>& frequencies) {
     return arr;
 }
 
+static nlohmann::json optional_bool_json(const std::optional<bool>& value) {
+    return value.has_value() ? nlohmann::json(*value) : nlohmann::json(nullptr);
+}
+
 static std::string map_radio_status(const std::string& internal) {
     if (internal == "ready" || internal == "discovering" || internal == "busy") {
         return "online";
@@ -121,7 +125,10 @@ static nlohmann::json build_radio_item(const rcc::radio::RadioDescriptor& desc) 
     item["capabilities"] = {
         {"channels", build_channels(caps.supported_frequencies_mhz)},
         {"minPowerDbm", std::round(watts_to_dbm(caps.power_range_watts.first))},
-        {"maxPowerDbm", std::round(watts_to_dbm(caps.power_range_watts.second))}
+        {"maxPowerDbm", std::round(watts_to_dbm(caps.power_range_watts.second))},
+        {"powerRangeSource", caps.power_range_source},
+        {"enableMaxPower", optional_bool_json(caps.enable_max_power)},
+        {"manualPowerControl", caps.manual_power_control_available}
     };
     item["state"] = build_radio_state(desc);
     return item;

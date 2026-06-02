@@ -785,7 +785,7 @@ Radio vendors may return errors in **textual** or **structured** formats. The sy
 | OI‑003 | Define schemas for `freq`, `power_dBm`, `supported_frequency_profiles` | **CLOSED (2025‑09‑30)** | Schemas and examples added in §6.1.1–§6.1.3; validation in §7.2.                                                                                                            |
 | OI‑004 | Validate optional method availability                                  | **CLOSED (2025‑09‑30)** | Verified: `read_power_dBm`, `read_power_mw`, `max_link_distance`, `gps_coordinates`, `gps_mode`, `gps_time`, `zeroize`; plus local `radio_reset`/`factory_reset`. See §6.2. |
 
-> Remaining gaps are tracked in the main text as **[TBD]** (e.g., auth policy, persistence after reset, antenna bit map table, regional constraints, `enable_max_power` control, timing/backoff values).
+> Remaining gaps are tracked in the main text as **[TBD]** (e.g., auth policy, persistence after reset, antenna bit map table, regional constraints, timing/backoff values).
 
 ---
 
