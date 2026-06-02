@@ -119,7 +119,7 @@ void Application::initialize(int argc, char* argv[]) {
 
     authenticator_ = std::make_unique<auth::Authenticator>(cfg.security);
     telemetry_     = std::make_unique<telemetry::TelemetryHub>(io, cfg);
-    auditLogger_   = std::make_unique<audit::AuditLogger>();
+    auditLogger_   = std::make_unique<audit::AuditLogger>(cfg.audit);
     radioManager_  = std::make_unique<radio::RadioManager>(io, cfg);
 
     orchestrator_ = std::make_unique<command::Orchestrator>(

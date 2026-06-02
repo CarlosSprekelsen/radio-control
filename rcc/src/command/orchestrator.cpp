@@ -5,8 +5,6 @@
 #include "rcc/radio/radio_manager.hpp"
 #include "rcc/telemetry/telemetry_hub.hpp"
 
-#include <iostream>
-
 namespace rcc::command {
 
 namespace {
@@ -49,7 +47,6 @@ Orchestrator::Orchestrator(config::ConfigManager& config,
 Orchestrator::~Orchestrator() = default;
 
 CommandResult Orchestrator::selectRadio(std::string_view radioId) {
-    std::cout << "[Orchestrator] selectRadio(" << radioId << ") called" << std::endl;
     CommandResult result{CommandResult::Code::Ok, "OK"};
     if (!radioManager_.set_active_radio(std::string(radioId))) {
         result = {CommandResult::Code::NotFound, "Radio not found"};
@@ -66,8 +63,6 @@ CommandResult Orchestrator::selectRadio(std::string_view radioId) {
 }
 
 CommandResult Orchestrator::setPower(std::string_view radioId, double watts) {
-    std::cout << "[Orchestrator] setPower(" << radioId << ", " << watts << ") called"
-              << std::endl;
     const auto emitAudit = [&](const CommandResult& r) {
         auditLogger_.record({
             .actor      = "system",
@@ -98,7 +93,8 @@ CommandResult Orchestrator::setPower(std::string_view radioId, double watts) {
     if (adapterResult.code != common::CommandResultCode::Ok) {
         CommandResult r{mapAdapterCode(adapterResult.code),
                         adapterResult.message.empty() ? "Adapter rejected setPower"
-                                                      : adapterResult.message};
+                                                      : adapterResult.message,
+                        adapterResult.vendor_payload};
         emitAudit(r);
         return r;
     }
@@ -119,8 +115,6 @@ CommandResult Orchestrator::setPower(std::string_view radioId, double watts) {
 }
 
 CommandResult Orchestrator::setChannel(std::string_view radioId, int channelIndex) {
-    std::cout << "[Orchestrator] setChannel(" << radioId << ", " << channelIndex
-              << ") called" << std::endl;
     const auto emitAudit = [&](const CommandResult& r) {
         auditLogger_.record({
             .actor      = "system",
@@ -152,7 +146,8 @@ CommandResult Orchestrator::setChannel(std::string_view radioId, int channelInde
     if (adapterResult.code != common::CommandResultCode::Ok) {
         CommandResult r{mapAdapterCode(adapterResult.code),
                         adapterResult.message.empty() ? "Adapter rejected setChannel"
-                                                      : adapterResult.message};
+                                                      : adapterResult.message,
+                        adapterResult.vendor_payload};
         emitAudit(r);
         return r;
     }

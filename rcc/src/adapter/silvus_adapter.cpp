@@ -219,6 +219,62 @@ double dbmToWatts(double dbm) {
     return std::pow(10.0, dbm / 10.0) / 1000.0;
 }
 
+std::string uppercase(std::string text) {
+    std::transform(text.begin(), text.end(), text.begin(), [](unsigned char c) {
+        return static_cast<char>(std::toupper(c));
+    });
+    return text;
+}
+
+std::string extractVendorMessage(const nlohmann::json& error) {
+    if (error.is_string()) {
+        return error.get<std::string>();
+    }
+    if (error.is_object()) {
+        if (const auto it = error.find("message"); it != error.end() && it->is_string()) {
+            return it->get<std::string>();
+        }
+        if (const auto it = error.find("code"); it != error.end()) {
+            if (it->is_string()) {
+                return it->get<std::string>();
+            }
+            if (it->is_number_integer()) {
+                return std::to_string(it->get<int>());
+            }
+        }
+    }
+    return error.dump();
+}
+
+common::CommandResult normalizeSilvusError(const nlohmann::json& error) {
+    const auto payload = error.dump();
+    const auto message = extractVendorMessage(error);
+    const auto normalized = uppercase(message + " " + payload);
+
+    if (normalized.find("OUT_OF_RANGE") != std::string::npos ||
+        normalized.find("INVALID_RANGE") != std::string::npos ||
+        normalized.find("INVALID PARAM") != std::string::npos ||
+        normalized.find("INVALID_PARAMS") != std::string::npos ||
+        normalized.find("-32002") != std::string::npos ||
+        normalized.find("-32602") != std::string::npos) {
+        return {common::CommandResultCode::InvalidRange, message, payload};
+    }
+    if (normalized.find("BUSY") != std::string::npos ||
+        normalized.find("RECOVER") != std::string::npos) {
+        return {common::CommandResultCode::Busy, message, payload};
+    }
+    if (normalized.find("UNAVAILABLE") != std::string::npos ||
+        normalized.find("REBOOT") != std::string::npos ||
+        normalized.find("BOOT") != std::string::npos ||
+        normalized.find("DISCONNECT") != std::string::npos ||
+        normalized.find("TIMEOUT") != std::string::npos ||
+        normalized.find("-32000") != std::string::npos) {
+        return {common::CommandResultCode::Unavailable, message, payload};
+    }
+
+    return {common::CommandResultCode::InternalError, message, payload};
+}
+
 void addFrequencySpec(std::vector<double>& freqs, const std::string& text) {
     const auto firstColon = text.find(':');
     if (firstColon == std::string::npos) {
@@ -429,7 +485,7 @@ common::CommandResult SilvusAdapter::connect() {
     }
 
     if (response.contains("error")) {
-        return {common::CommandResultCode::Unavailable, response["error"].dump(), std::nullopt};
+        return normalizeSilvusError(response["error"]);
     }
 
     const auto freqs = parseSupportedFrequencies(response);
@@ -486,7 +542,7 @@ common::CommandResult SilvusAdapter::set_power(double watts) {
     }
 
     if (response.contains("error")) {
-        return {common::CommandResultCode::InvalidRange, response["error"].dump(), std::nullopt};
+        return normalizeSilvusError(response["error"]);
     }
 
     state_.power_watts = watts;
@@ -529,7 +585,7 @@ common::CommandResult SilvusAdapter::set_channel(int channel_index,
     }
 
     if (response.contains("error")) {
-        return {common::CommandResultCode::InvalidRange, response["error"].dump(), std::nullopt};
+        return normalizeSilvusError(response["error"]);
     }
 
     state_.channel_index = findChannelIndex(capabilities_, frequency_mhz).value_or(channel_index);
@@ -558,7 +614,7 @@ common::CommandResult SilvusAdapter::refresh_state() {
         return {common::CommandResultCode::InternalError, "Invalid JSON from radio", std::nullopt};
     }
     if (powerResponse.contains("error")) {
-        return {common::CommandResultCode::Unavailable, powerResponse["error"].dump(), std::nullopt};
+        return normalizeSilvusError(powerResponse["error"]);
     }
 
     if (const auto powerDbm = parsePowerResult(powerResponse)) {
@@ -584,7 +640,7 @@ common::CommandResult SilvusAdapter::refresh_state() {
         return {common::CommandResultCode::InternalError, "Invalid JSON from radio", std::nullopt};
     }
     if (freqResponse.contains("error")) {
-        return {common::CommandResultCode::Unavailable, freqResponse["error"].dump(), std::nullopt};
+        return normalizeSilvusError(freqResponse["error"]);
     }
 
     if (const auto frequency = parseFrequencyResult(freqResponse)) {

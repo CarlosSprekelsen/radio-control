@@ -33,6 +33,12 @@ security:
     - controller
   token_ttl_sec: 60
 
+audit:
+  enabled: true
+  file_path: "/tmp/rcc-audit-test.log"
+  rotate_after_bytes: 4096
+  rotated_file_count: 3
+
 timing:
   normal_probe_sec: 10
   recovering_probe_sec: 5
@@ -68,6 +74,10 @@ TEST(ConfigManager, LoadsRequiredFields) {
     EXPECT_EQ(cfg.telemetry.event_buffer_size, 64u);
     EXPECT_EQ(cfg.security.token_secret,  "unit-test-secret");
     EXPECT_FALSE(cfg.security.allow_unauthenticated_dev_access);
+    EXPECT_TRUE(cfg.audit.enabled);
+    EXPECT_EQ(cfg.audit.file_path, "/tmp/rcc-audit-test.log");
+    EXPECT_EQ(cfg.audit.rotate_after_bytes, 4096u);
+    EXPECT_EQ(cfg.audit.rotated_file_count, 3u);
     ASSERT_EQ(cfg.radios.size(),          1u);
     EXPECT_EQ(cfg.radios[0].id,           "radio-1");
     EXPECT_EQ(cfg.radios[0].adapter,      "silvus");

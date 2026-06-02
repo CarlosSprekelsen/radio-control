@@ -2,6 +2,7 @@
 
 #include <chrono>
 #include <cstdint>
+#include <cstddef>
 #include <optional>
 #include <string>
 #include <vector>
@@ -27,6 +28,13 @@ struct SecurityConfig {
     bool allow_unauthenticated_dev_access{false};
     std::vector<std::string> allowed_roles;
     std::chrono::seconds token_ttl{std::chrono::seconds{300}};
+};
+
+struct AuditConfig {
+    bool enabled{true};
+    std::string file_path{"/var/log/rcc/audit.log"};
+    std::uintmax_t rotate_after_bytes{1024U * 1024U};
+    std::size_t rotated_file_count{10};
 };
 
 struct RadioEntry {
@@ -65,6 +73,7 @@ struct Config {
     NetworkConfig network;
     TelemetryConfig telemetry;
     SecurityConfig security;
+    AuditConfig audit;
     ServiceDiscoveryConfig service_discovery;
     TimingProfile timing;
     std::vector<RadioEntry> radios;

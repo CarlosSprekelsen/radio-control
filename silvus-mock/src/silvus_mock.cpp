@@ -1,7 +1,6 @@
 #include "silvus_mock.hpp"
 
 #include <cmath>
-#include <iostream>
 #include <utility>
 
 using json = nlohmann::json;
@@ -156,7 +155,6 @@ json SilvusMock::make_result(const json& result, const json& id) const {
 }
 
 json SilvusMock::handle_jsonrpc(const json& req) {
-    std::cout << "[silvus-mock] handle_jsonrpc item: " << req.dump() << std::endl;
     if (!req.is_object() || req.value("jsonrpc", "") != "2.0" || !req.contains("method")) {
         return make_error(-32600, "Invalid Request", req.value("id", nullptr));
     }
@@ -168,7 +166,6 @@ json SilvusMock::handle_jsonrpc(const json& req) {
 
     try {
         auto methodNode = req["method"];
-        std::cout << "[silvus-mock] method node type=" << methodNode.type_name() << " dump=" << methodNode.dump() << std::endl;
         auto method = methodNode.get<std::string>();
         json params = json::array();
         if (req.contains("params")) {
@@ -178,16 +175,9 @@ json SilvusMock::handle_jsonrpc(const json& req) {
                 params = json::array({req["params"]});
             }
         }
-        std::cout << "[silvus-mock] handle_jsonrpc method=" << method << " params=" << params.dump() << std::endl;
-        std::cout << "[silvus-mock] handle_jsonrpc before lock" << std::endl;
         std::lock_guard lock(mutex_);
-        std::cout << "[silvus-mock] handle_jsonrpc after lock" << std::endl;
-        std::cout << "[silvus-mock] handle_jsonrpc availability=" << is_available() << std::endl;
         if (!is_available()) {
-            std::cout << "[silvus-mock] handle_jsonrpc returning UNAVAILABLE" << std::endl;
-            auto result = make_error(-32000, "UNAVAILABLE", id);
-            std::cout << "[silvus-mock] UNAVAILABLE result=" << result.dump() << std::endl;
-            return result;
+            return make_error(-32000, "UNAVAILABLE", id);
         }
 
         if (method == "freq") {
@@ -207,15 +197,12 @@ json SilvusMock::handle_jsonrpc(const json& req) {
             if (params.empty()) {
                 return make_result(json::array({std::to_string(current_power_dBm_)}), id);
             }
-            std::cout << "[silvus-mock] power_dBm params[0] type=" << params[0].type_name() << " dump=" << params[0].dump() << std::endl;
             int power;
             try {
                 power = params[0].is_number() ? params[0].get<int>() : std::stoi(params[0].get<std::string>());
             } catch (...) {
-                std::cout << "[silvus-mock] power_dBm invalid range parse failure" << std::endl;
                 return make_error(-32002, "INVALID_RANGE", id);
             }
-            std::cout << "[silvus-mock] power_dBm parsed power=" << power << std::endl;
             if (power < 0 || power > 39) {
                 return make_error(-32002, "INVALID_RANGE", id);
             }
@@ -225,9 +212,7 @@ json SilvusMock::handle_jsonrpc(const json& req) {
             if (power_change_duration_.count() > 0) {
                 blackout_until_ = std::chrono::steady_clock::now() + power_change_duration_;
             }
-            auto response = make_result(json::array({""}), id);
-            std::cout << "[silvus-mock] power_dBm response=" << response.dump() << std::endl;
-            return response;
+            return make_result(json::array({""}), id);
         }
 
         if (method == "enable_max_power") {
@@ -343,7 +328,6 @@ json SilvusMock::handle_jsonrpc(const json& req) {
 
         return make_error(-32601, "Method not found", id);
     } catch (const json::exception& e) {
-        std::cout << "[silvus-mock] handle_jsonrpc json exception: " << e.what() << std::endl;
         return make_error(-32603, std::string("Internal error: ") + e.what(), id);
     }
 }
@@ -367,37 +351,28 @@ json SilvusMock::get_status() const {
     };
 }
 std::string SilvusMock::handle_jsonrpc_text(const std::string& payload) {
-    std::cout << "[silvus-mock] handle_jsonrpc_text payload: " << payload << std::endl;
     try {
         auto req = json::parse(payload);
-        std::cout << "[silvus-mock] handle_jsonrpc_text parsed type: " << (req.is_array() ? "array" : "object") << std::endl;
         if (req.is_array()) {
             json responses = json::array();
             for (const auto& item : req) {
                 responses.push_back(handle_jsonrpc(item));
             }
-            auto output = responses.dump();
-            std::cout << "[silvus-mock] handle_jsonrpc_text batch response: " << output << std::endl;
-            return output;
+            return responses.dump();
         }
         auto resp = handle_jsonrpc(req);
-        auto output = resp.dump();
-        std::cout << "[silvus-mock] handle_jsonrpc_text single response: " << output << std::endl;
-        return output;
+        return resp.dump();
     } catch (const json::parse_error&) {
         auto err = make_error(-32700, "Parse error", nullptr);
         return err.dump();
     } catch (const json::exception& e) {
         auto err = make_error(-32603, std::string("Internal error: ") + e.what(), nullptr);
-        std::cout << "[silvus-mock] handle_jsonrpc_text json exception: " << e.what() << std::endl;
         return err.dump();
     } catch (const std::exception& e) {
         auto err = make_error(-32603, std::string("Internal error: ") + e.what(), nullptr);
-        std::cout << "[silvus-mock] handle_jsonrpc_text exception: " << e.what() << std::endl;
         return err.dump();
     } catch (...) {
         auto err = make_error(-32603, "Internal error", nullptr);
-        std::cout << "[silvus-mock] handle_jsonrpc_text unknown exception" << std::endl;
         return err.dump();
     }
 }

@@ -38,6 +38,15 @@ std::string makeOkResponse() {
     return R"({"jsonrpc":"2.0","id":"1","result":[""]})";
 }
 
+std::string makeErrorResponse(nlohmann::json error) {
+    nlohmann::json response = {
+        {"jsonrpc", "2.0"},
+        {"id", "1"},
+        {"error", std::move(error)}
+    };
+    return response.dump();
+}
+
 std::string makePowerResponse(int dbm) {
     nlohmann::json response = {
         {"jsonrpc", "2.0"},
@@ -281,6 +290,66 @@ TEST(SilvusAdapter, SetPowerReturnsBusyWhenMaxPowerModeOwnsOutput) {
     const auto res = adapter.set_power(1.0);
     EXPECT_EQ(res.code, rcc::common::CommandResultCode::Busy);
     EXPECT_FALSE(sawPowerSet);
+
+    server.stop();
+}
+
+TEST(SilvusAdapter, NormalizesStringVendorErrors) {
+    const uint16_t port = rcc::test::find_free_port();
+    rcc::test::FakeRadioServer server(port);
+    server.setHandler([](const std::string& request) {
+        if (request.find("\"supported_frequency_profiles\"") != std::string::npos) {
+            return rcc::test::RadioResponse{200, makeSupportedFrequenciesResponse()};
+        }
+        if (request.find("\"enable_max_power\"") != std::string::npos) {
+            return rcc::test::RadioResponse{200, makeEnableMaxPowerResponse(false)};
+        }
+        if (request.find("\"power_dBm\"") != std::string::npos &&
+            request.find("\"params\"") != std::string::npos) {
+            return rcc::test::RadioResponse{200, makeErrorResponse("BUSY")};
+        }
+        return rcc::test::RadioResponse{200, makeOkResponse()};
+    });
+    server.start();
+
+    rcc::adapter::SilvusAdapter adapter("radio-1", makeEndpoint(port));
+    ASSERT_EQ(adapter.connect().code, rcc::common::CommandResultCode::Ok);
+
+    const auto res = adapter.set_power(1.0);
+    EXPECT_EQ(res.code, rcc::common::CommandResultCode::Busy);
+    ASSERT_TRUE(res.vendor_payload.has_value());
+    EXPECT_NE(res.vendor_payload->find("BUSY"), std::string::npos);
+
+    server.stop();
+}
+
+TEST(SilvusAdapter, NormalizesObjectVendorErrors) {
+    const uint16_t port = rcc::test::find_free_port();
+    rcc::test::FakeRadioServer server(port);
+    server.setHandler([](const std::string& request) {
+        if (request.find("\"supported_frequency_profiles\"") != std::string::npos) {
+            return rcc::test::RadioResponse{200, makeSupportedFrequenciesResponse()};
+        }
+        if (request.find("\"enable_max_power\"") != std::string::npos) {
+            return rcc::test::RadioResponse{200, makeEnableMaxPowerResponse(false)};
+        }
+        if (request.find("\"freq\"") != std::string::npos &&
+            request.find("\"params\"") != std::string::npos) {
+            return rcc::test::RadioResponse{
+                200,
+                makeErrorResponse({{"code", -32000}, {"message", "UNAVAILABLE"}})};
+        }
+        return rcc::test::RadioResponse{200, makeOkResponse()};
+    });
+    server.start();
+
+    rcc::adapter::SilvusAdapter adapter("radio-1", makeEndpoint(port));
+    ASSERT_EQ(adapter.connect().code, rcc::common::CommandResultCode::Ok);
+
+    const auto res = adapter.set_channel(3, 2462.0);
+    EXPECT_EQ(res.code, rcc::common::CommandResultCode::Unavailable);
+    ASSERT_TRUE(res.vendor_payload.has_value());
+    EXPECT_NE(res.vendor_payload->find("UNAVAILABLE"), std::string::npos);
 
     server.stop();
 }

@@ -162,6 +162,30 @@ SecurityConfig loadSecurityConfig(const YAML::Node& node) {
     return cfg;
 }
 
+AuditConfig loadAuditConfig(const YAML::Node& node) {
+    AuditConfig cfg;
+    if (!node) {
+        return cfg;
+    }
+
+    if (const auto value = optionalScalar<bool>(node, "enabled", "audit")) {
+        cfg.enabled = *value;
+    }
+    if (const auto value = optionalScalar<std::string>(node, "file_path", "audit")) {
+        cfg.file_path = *value;
+    }
+    if (const auto value =
+            optionalScalar<std::uintmax_t>(node, "rotate_after_bytes", "audit")) {
+        cfg.rotate_after_bytes = *value;
+    }
+    if (const auto value =
+            optionalScalar<std::size_t>(node, "rotated_file_count", "audit")) {
+        cfg.rotated_file_count = *value;
+    }
+
+    return cfg;
+}
+
 TimingProfile loadTimingProfile(const YAML::Node& node) {
     TimingProfile cfg;
 
@@ -270,6 +294,7 @@ Config parseConfig(const YAML::Node& root) {
     const auto security =
         dts::common::config::requireChild(root, "security");
     cfg.security = loadSecurityConfig(security);
+    cfg.audit = loadAuditConfig(root["audit"]);
 
     cfg.service_discovery =
         loadServiceDiscoveryConfig(root["serviceDiscovery"]);

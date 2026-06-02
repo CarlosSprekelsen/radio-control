@@ -227,6 +227,24 @@ static std::string errJson(int status, const std::string& statusText,
                         {{"result", "error"}, {"code", code}, {"message", message}});
 }
 
+static std::string errJson(int status, const std::string& statusText,
+                           const std::string& code,
+                           const std::string& message,
+                           const std::optional<std::string>& details) {
+    nlohmann::json body = {{"result", "error"}, {"code", code}, {"message", message}};
+    if (details && !details->empty()) {
+        try {
+            auto parsed = nlohmann::json::parse(*details);
+            body["details"] = parsed.is_object()
+                ? parsed
+                : nlohmann::json{{"vendorError", std::move(parsed)}};
+        } catch (...) {
+            body["details"] = {{"vendorError", *details}};
+        }
+    }
+    return jsonResponse(status, statusText, std::move(body));
+}
+
 static std::string htmlResponse(std::string_view html) {
     std::ostringstream oss;
     oss << "HTTP/1.1 200 OK\r\n"
@@ -538,7 +556,7 @@ private:
         if (result.code == command::CommandResult::Code::Ok)
             return okJson({{"activeRadioId", radioId}});
         return errJson(commandCodeToHttp(result.code), "Error",
-                       commandCodeToSpec(result.code), result.message);
+                       commandCodeToSpec(result.code), result.message, result.details);
     }
 
     std::string handleSetPower(const dts::common::rest::HttpRequest& req,
@@ -561,7 +579,7 @@ private:
         if (result.code == command::CommandResult::Code::Ok)
             return okJson({{"powerDbm", dbm}});
         return errJson(commandCodeToHttp(result.code), "Error",
-                       commandCodeToSpec(result.code), result.message);
+                       commandCodeToSpec(result.code), result.message, result.details);
     }
 
     std::string handleSetChannel(const dts::common::rest::HttpRequest& req,
@@ -616,7 +634,7 @@ private:
                                                                 : nlohmann::json(nullptr)}});
         }
         return errJson(commandCodeToHttp(result.code), "Error",
-                       commandCodeToSpec(result.code), result.message);
+                       commandCodeToSpec(result.code), result.message, result.details);
     }
 
     // ─── Members ─────────────────────────────────────────────────────────────

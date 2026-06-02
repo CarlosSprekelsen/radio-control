@@ -30,14 +30,10 @@ void HttpServer::serve() {
             std::string body = req.body;
             if (body.empty()) {
                 std::string bad = "{\"jsonrpc\":\"2.0\",\"error\":{\"code\":-32600,\"message\":\"Invalid Request\"},\"id\":null}";
-                std::cout << "[silvus-mock] JSON-RPC request empty /streamscape_api" << std::endl;
-                std::cout << "[silvus-mock] JSON-RPC response: " << bad << std::endl;
                 return make_http_response(bad, "application/json");
             }
-            std::cout << "[silvus-mock] JSON-RPC request: " << body << std::endl;
             try {
                 std::string response = mock_->handle_jsonrpc_text(body);
-                std::cout << "[silvus-mock] JSON-RPC response: " << response << std::endl;
                 return make_http_response(response, "application/json");
             } catch (const std::exception& ex) {
                 std::string bad = "{\"jsonrpc\":\"2.0\",\"error\":{\"code\":-32603,\"message\":\"Internal error\",\"data\":\"" + std::string(ex.what()) + "\"},\"id\":null}";

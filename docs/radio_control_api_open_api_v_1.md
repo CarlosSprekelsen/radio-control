@@ -279,16 +279,72 @@ data: {"radioId":"silvus-01","frequencyMhz":2422,"channelIndex":3}
 ---
 
 ### 3.10 GET `/health`
-Liveness/readiness probe.
+Liveness/readiness probe. The response uses the canonical DTS health snapshot
+from `dts-common` (`dts/common/health/health_types.hpp`) rather than a
+radio-service-specific envelope.
 
 **Response 200**
 ```json
-{ "status": "ok", "uptimeSec": 1234, "version": "1.0.0" }
+{
+  "status": "healthy",
+  "checks": {
+    "container": "ok",
+    "device": "connected",
+    "telemetry": "ok",
+    "adapter": "connected"
+  },
+  "metrics": {
+    "uptime": 1234,
+    "measurementCount": 0,
+    "lastSequenceId": 42,
+    "ringFillRatio": 0.0,
+    "lastHeartbeat": "2026-06-02T10:00:00Z",
+    "lastEvent": "2026-06-02T10:00:00Z",
+    "droppedFrames": {
+      "oversize": 0,
+      "queue": 0
+    }
+  },
+  "version": {
+    "schema": "1.0",
+    "container": "1.0.0",
+    "buildTime": "2026-06-02T10:00:00Z",
+    "compiler": "gcc"
+  },
+  "timestamp": "2026-06-02T10:00:00Z"
+}
 ```
 
 **Response 503**
 ```json
-{ "status": "degraded", "reason": "adapter.unavailable" }
+{
+  "status": "degraded",
+  "checks": {
+    "container": "error",
+    "device": "disconnected",
+    "telemetry": "ok",
+    "adapter": "disconnected"
+  },
+  "metrics": {
+    "uptime": 1234,
+    "measurementCount": 0,
+    "lastSequenceId": 42,
+    "ringFillRatio": 0.0,
+    "lastHeartbeat": "2026-06-02T10:00:00Z",
+    "lastEvent": "2026-06-02T10:00:00Z",
+    "droppedFrames": {
+      "oversize": 0,
+      "queue": 0
+    }
+  },
+  "version": {
+    "schema": "1.0",
+    "container": "1.0.0",
+    "buildTime": "2026-06-02T10:00:00Z",
+    "compiler": "gcc"
+  },
+  "timestamp": "2026-06-02T10:00:00Z"
+}
 ```
 
 ---

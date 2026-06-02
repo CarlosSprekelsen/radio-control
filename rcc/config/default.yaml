@@ -26,6 +26,12 @@ security:
     - controller
   token_ttl_sec: 300
 
+audit:
+  enabled: true
+  file_path: "/var/log/rcc/audit.log"
+  rotate_after_bytes: 1048576
+  rotated_file_count: 10
+
 serviceDiscovery:
   enabled: true
   port: 9999

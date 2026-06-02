@@ -1,22 +1,47 @@
 #include "rcc/audit/audit_logger.hpp"
 
-#include <dts/common/core/logging.hpp>
+#include <dts/common/security/audit_logger.hpp>
 #include <nlohmann/json.hpp>
-#include <sstream>
+#include <utility>
 
 namespace rcc::audit {
 
+class AuditLogger::Impl {
+public:
+    explicit Impl(const config::AuditConfig& config)
+        : logger(config.file_path,
+                 config.enabled,
+                 config.rotate_after_bytes,
+                 config.rotated_file_count) {}
+
+    dts::common::security::AuditLogger logger;
+};
+
+AuditLogger::AuditLogger()
+    : AuditLogger(config::AuditConfig{}) {}
+
+AuditLogger::AuditLogger(const config::AuditConfig& config)
+    : impl_(std::make_unique<Impl>(config)) {}
+
+AuditLogger::~AuditLogger() = default;
+
 void AuditLogger::record(const AuditRecord& record) const {
-    nlohmann::json payload = {
-        {"actor",      record.actor},
+    if (!impl_) {
+        return;
+    }
+
+    nlohmann::json details = {
         {"action",     record.action},
         {"radioId",    record.radio_id},
-        {"result",     common::to_string(record.result)},
         {"message",    record.message},
         {"parameters", record.parameters}
     };
 
-    dts::common::core::getLogger().info("[AUDIT] " + payload.dump());
+    impl_->logger.logOperation(record.actor,
+                               record.action,
+                               common::to_string(record.result),
+                               "",
+                               std::move(details));
 }
 
 }  // namespace rcc::audit

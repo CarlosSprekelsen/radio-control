@@ -35,6 +35,7 @@ struct CommandResult {
 
     Code code{Code::InternalError};
     std::string message{};
+    std::optional<std::string> details;
 };
 
 class Orchestrator {

@@ -513,21 +513,43 @@ components:
     HealthResponse:
       type: object
       required:
-        - result
-        - data
+        - status
+        - checks
+        - metrics
+        - version
+        - timestamp
       properties:
-        result:
+        status:
           type: string
-          enum: ["ok"]
-        data:
+          enum: ["healthy", "degraded", "unhealthy"]
+        checks:
           type: object
           properties:
-            status:
+            container:
               type: string
-              enum: ["healthy"]
-            timestamp:
+            device:
               type: string
-              format: date-time
+            telemetry:
+              type: string
+            adapter:
+              type: string
+        metrics:
+          type: object
+          additionalProperties: true
+        version:
+          type: object
+          properties:
+            schema:
+              type: string
+            container:
+              type: string
+            buildTime:
+              type: string
+            compiler:
+              type: string
+        timestamp:
+          type: string
+          format: date-time
         correlationId:
           type: string
   securitySchemes:
