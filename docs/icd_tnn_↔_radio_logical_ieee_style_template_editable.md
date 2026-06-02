@@ -148,8 +148,8 @@ Channel/Power Control" as Thales
 
 User --> Terminal : Operates
 User --> App : Uses
-App --> RCSvc : Device Commands (HTTP :8002)
-RCSvc --> App : SSE Telemetry (HTTP :8003)
+App --> RCSvc : Device Commands (HTTP :8080)
+RCSvc --> App : SSE Telemetry (HTTP :8081)
 Silvus --> RCSvc : Radio Channel/Power
 (HTTP POST /streamscape_api)
 Harris --> RCSvc : Radio Channel/Power
@@ -163,7 +163,7 @@ Thales --> RCSvc : Radio Channel/Power
 
 | Interface                                 | Direction                                   | Transport                      | Endpoint                                                                                 | Auth                  | Notes                                                               |
 | ----------------------------------------- | ------------------------------------------- | ------------------------------ | ---------------------------------------------------------------------------------------- | --------------------- | ------------------------------------------------------------------- |
-| **Radio Control App ↔ RCSvc (Container)** | App→RCSvc (commands), RCSvc→App (SSE)       | IPC over **HTTP**              | `http://<rcsvc_host>:8002` (device commands), `http://<rcsvc_host>:8003` (SSE telemetry) | [TBD]                 | 8002: command API; 8003: server‑sent events (telemetry/changes)     |
+| **Radio Control App ↔ RCSvc (Container)** | App→RCSvc (commands), RCSvc→App (SSE)       | IPC over **HTTP**              | `http://<rcsvc_host>:8080` (device commands), `http://<rcsvc_host>:8081` (SSE telemetry) | [TBD]                 | 8080: command API; 8081: server‑sent events (telemetry/changes)     |
 | TNN (Client) ↔ Silvus (Server)            | Requests: TNN→Silvus; Responses: Silvus→TNN | RNDIS over USB 2.0 HS (TCP/IP) | `http://<radio_IP>:80/streamscape_api`                                                   | [TBD]                 | JSON‑RPC 2.0 over HTTP POST                                         |
 | TNN (Client) ↔ Silvus Local Maintenance   | Requests: TNN→Silvus; Responses: Silvus→TNN | **TCP** (local iface only)     | `<radio_IP>:50000`                                                                       | **None (local only)** | `zeroize`, `radio_reset`, `factory_reset`; not accessible over mesh |
 
@@ -182,8 +182,8 @@ component "Radio Control Container (RCC)" as RCC
 component "Silvus Radio" as Radio
 
 rectangle "Exposed by RCC" as RCCIf {
-  [HTTP :8002 /device-commands]
-  [HTTP :8003 /sse-telemetry]
+  [HTTP :8080 /api/v1]
+  [HTTP :8081 /api/v1/telemetry]
 }
 
 rectangle "Exposed by Silvus Radio" as RadioIf {
@@ -191,11 +191,11 @@ rectangle "Exposed by Silvus Radio" as RadioIf {
   [TCP :50000 JSON-RPC]
 }
 
-App --> [HTTP :8002 /device-commands] : consumes
-[HTTP :8002 /device-commands] --> RCC : exposed by
+App --> [HTTP :8080 /api/v1] : consumes
+[HTTP :8080 /api/v1] --> RCC : exposed by
 
-RCC --> [HTTP :8003 /sse-telemetry] : exposes
-[HTTP :8003 /sse-telemetry] --> App : subscribes
+RCC --> [HTTP :8081 /api/v1/telemetry] : exposes
+[HTTP :8081 /api/v1/telemetry] --> App : subscribes
 
 RCC --> [HTTP :80 /streamscape_api] : consumes
 [HTTP :80 /streamscape_api] --> Radio : exposed by
@@ -762,8 +762,8 @@ Radio vendors may return errors in **textual** or **structured** formats. The sy
 
 ## 12. Manageability & Telemetry
 
-- **Command Path**: **App → RCC** on **:8002** for device commands. *(Container/Public API scope; not part of radio ICD)*
-- **Telemetry Path**: **RCC → App** via **SSE on :8003** for state changes. **Note**: SSE is **App↔Container design**, not a radio interface.
+- **Command Path**: **App → RCC** on **:8080** for device commands. *(Container/Public API scope; not part of radio ICD)*
+- **Telemetry Path**: **RCC → App** via **SSE on :8081** for state changes. **Note**: SSE is **App↔Container design**, not a radio interface.
 - **Radio Polling**: RCC polls the **radio HTTP API** and **transforms** changes into SSE for the App. If SSE is unavailable, App may poll RCC. **Exact cadence**: *[TBD by performance testing]* (e.g., 1–5 s active; 10–30 s background).
 - **Soft‑boot Handling**: After `freq` set, RCC suppresses further radio calls until the radio's HTTP endpoint recovers (retry/backoff). **Timeout/backoff values**: *[TBD lab]*.
 
@@ -796,7 +796,7 @@ Radio vendors may return errors in **textual** or **structured** formats. The sy
 - **JSON‑RPC v2.0** — Standard JSON Remote Procedure Call protocol used by the radio API; requests carry `method`, optional `params` (array of strings), and `id`.
 - **Local Maintenance Channel** — JSON‑RPC service on TCP **50000** accessible **only via local interfaces** (Ethernet/USB); implements `zeroize`, `radio_reset`, `factory_reset`; **no auth**.
 - **Profile (Frequency Profile)** — Object describing allowed frequency ranges (`frequencies`), `bandwidth`, and `antenna_mask` supported by the board.
-- **RCC (Radio Control Container)** — The container service that mediates between the App and the radio, exposing **:8002** for device commands and **:8003** for SSE telemetry.
+- **RCC (Radio Control Container)** — The container service that mediates between the App and the radio, exposing **:8080** for device commands and **:8081** for SSE telemetry.
 - **Result/Params Encoding** — Radio returns values as **strings in JSON arrays**; set operations send **string‑encoded** values in `params` arrays; success returns `[""]`.
 - **Soft‑boot** — Temporary service interruption that occurs when applying certain settings, e.g., `freq`; suppress further calls until the radio endpoint recovers.
 - **Zeroize** — Operation that resets credentials/keys and erases settings; on v4.0.3.0, recreates `admin`, `basic`, `advanced` users with default password **"HelloWorld"**.

@@ -1,7 +1,19 @@
 # Issue 12 — No duty-cycled probing, no soft-boot UNAVAILABLE handling, no capability re-ingest on re-attach
 
-**Status:** Open.
+**Status:** Open, partially mitigated 2026-06-02.
 **Observed:** 2026-04-19, rcc C++ port architecture review.
+
+## 2026-06-02 Update
+
+The adapter now arms a StreamCaster soft-boot recovery window after successful
+`freq` changes, reports radio state as `Recovering`, and rejects follow-on
+`set_power`, `set_channel`, and `refresh_state` calls with `BUSY` until that
+window expires. Southbound HTTP calls also have bounded deadlines, so a
+recovering or half-open radio no longer causes unbounded blocking.
+
+This issue remains open for the larger state-machine work: there is still no
+scheduled duty-cycled probe loop, no offline/reconnect loop, and no capability
+re-ingest on radio re-attach.
 
 ## Symptom
 

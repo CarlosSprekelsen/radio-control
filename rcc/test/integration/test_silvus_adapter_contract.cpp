@@ -6,6 +6,8 @@
 #include <asio.hpp>
 #include <nlohmann/json.hpp>
 
+#include <chrono>
+#include <optional>
 #include <string>
 
 namespace {
@@ -81,7 +83,11 @@ TEST(SilvusAdapterContract, ConnectSetPowerRefreshStateAgainstFakeRadio) {
         return rcc::test::RadioResponse{200, makeOkResponse()};
     });
 
-    rcc::adapter::SilvusAdapter adapter("radio-1", endpoint);
+    rcc::adapter::SilvusAdapter adapter("radio-1",
+                                        endpoint,
+                                        std::nullopt,
+                                        std::chrono::milliseconds{3000},
+                                        std::chrono::seconds{0});
 
     const auto connectResult = adapter.connect();
     EXPECT_EQ(connectResult.code, rcc::common::CommandResultCode::Ok);

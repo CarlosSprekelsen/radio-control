@@ -1,14 +1,10 @@
 #include "rcc/adapter/silvus_adapter.hpp"
 
-#include <asio/connect.hpp>
 #include <asio/ip/tcp.hpp>
-#include <asio/read.hpp>
-#include <asio/read_until.hpp>
-#include <asio/streambuf.hpp>
-#include <asio/write.hpp>
 #include <nlohmann/json.hpp>
 
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <cctype>
 #include <iomanip>
@@ -69,28 +65,19 @@ std::optional<EndpointInfo> parseEndpoint(const std::string& endpoint) {
 
 std::optional<std::string> sendHttpPost(const std::string& endpoint,
                                         const std::string& requestBody,
-                                        std::string& error) {
+                                        std::string& error,
+                                        std::chrono::milliseconds timeout) {
     const auto parsed = parseEndpoint(endpoint);
     if (!parsed) {
         error = "Invalid endpoint URI";
         return std::nullopt;
     }
 
-    asio::io_context io;
-    asio::ip::tcp::resolver resolver(io);
-    asio::ip::tcp::resolver::results_type results;
-    try {
-        results = resolver.resolve(parsed->host, parsed->port);
-    } catch (const std::exception& ex) {
-        error = std::string("DNS resolve failed: ") + ex.what();
-        return std::nullopt;
-    }
-
-    asio::ip::tcp::socket socket(io);
-    try {
-        asio::connect(socket, results);
-    } catch (const std::exception& ex) {
-        error = std::string("Connection failed: ") + ex.what();
+    asio::ip::tcp::iostream stream;
+    stream.expires_after(timeout);
+    stream.connect(parsed->host, parsed->port);
+    if (!stream) {
+        error = "Connection failed: " + stream.error().message();
         return std::nullopt;
     }
 
@@ -103,24 +90,19 @@ std::optional<std::string> sendHttpPost(const std::string& endpoint,
             << "\r\n"
             << requestBody;
 
-    try {
-        asio::write(socket, asio::buffer(request.str()));
-    } catch (const std::exception& ex) {
-        error = std::string("Write failed: ") + ex.what();
+    stream << request.str();
+    stream.flush();
+    if (!stream) {
+        error = "Write failed: " + stream.error().message();
         return std::nullopt;
     }
 
-    asio::streambuf responseBuffer;
-    try {
-        asio::read_until(socket, responseBuffer, "\r\n\r\n");
-    } catch (const std::exception& ex) {
-        error = std::string("Read failed: ") + ex.what();
-        return std::nullopt;
-    }
-
-    std::istream responseStream(&responseBuffer);
     std::string statusLine;
-    std::getline(responseStream, statusLine);
+    std::getline(stream, statusLine);
+    if (!stream) {
+        error = "Read failed: " + stream.error().message();
+        return std::nullopt;
+    }
     if (!statusLine.empty() && statusLine.back() == '\r') {
         statusLine.pop_back();
     }
@@ -134,7 +116,7 @@ std::optional<std::string> sendHttpPost(const std::string& endpoint,
 
     std::string header;
     size_t contentLength = 0;
-    while (std::getline(responseStream, header) && header != "\r") {
+    while (std::getline(stream, header) && header != "\r") {
         if (!header.empty() && header.back() == '\r') {
             header.pop_back();
         }
@@ -154,43 +136,15 @@ std::optional<std::string> sendHttpPost(const std::string& endpoint,
 
     std::string body;
     if (contentLength > 0) {
-        body.reserve(contentLength);
-        if (responseBuffer.size() > 0) {
-            std::string bufferedBody{
-                std::istreambuf_iterator<char>(&responseBuffer),
-                std::istreambuf_iterator<char>()};
-            if (bufferedBody.size() > contentLength) {
-                bufferedBody.resize(contentLength);
-            }
-            body += bufferedBody;
-        }
-
-        if (body.size() < contentLength) {
-            const auto remaining = contentLength - body.size();
-            std::vector<char> data(remaining);
-            try {
-                asio::read(socket, asio::buffer(data), asio::transfer_exactly(remaining));
-                body.append(data.data(), remaining);
-            } catch (const std::exception& ex) {
-                error = std::string("Body read failed: ") + ex.what();
-                return std::nullopt;
-            }
+        body.resize(contentLength);
+        stream.read(body.data(), static_cast<std::streamsize>(contentLength));
+        if (stream.gcount() != static_cast<std::streamsize>(contentLength)) {
+            error = "Body read failed: " + stream.error().message();
+            return std::nullopt;
         }
     } else {
         std::ostringstream remaining;
-        if (responseStream.rdbuf()->in_avail() > 0) {
-            remaining << responseStream.rdbuf();
-        }
-        std::error_code ec;
-        while (asio::read(socket, responseBuffer, asio::transfer_at_least(1), ec)) {
-        }
-        if (ec == asio::error::eof || !ec) {
-            if (responseBuffer.size() > 0) {
-                std::ostringstream ss;
-                ss << &responseBuffer;
-                remaining << ss.str();
-            }
-        }
+        remaining << stream.rdbuf();
         body = remaining.str();
     }
 
@@ -398,7 +352,8 @@ std::optional<double> parseFrequencyResult(const nlohmann::json& response) {
     return std::nullopt;
 }
 
-std::optional<bool> readEnableMaxPower(const std::string& endpoint) {
+std::optional<bool> readEnableMaxPower(const std::string& endpoint,
+                                       std::chrono::milliseconds timeout) {
     nlohmann::json request = {
         {"jsonrpc", "2.0"},
         {"id", "enable_max_power"},
@@ -406,7 +361,7 @@ std::optional<bool> readEnableMaxPower(const std::string& endpoint) {
     };
 
     std::string error;
-    const auto responseBody = sendHttpPost(endpoint, request.dump(), error);
+    const auto responseBody = sendHttpPost(endpoint, request.dump(), error, timeout);
     if (!responseBody) {
         return std::nullopt;
     }
@@ -432,13 +387,22 @@ std::optional<int> findChannelIndex(const CapabilityInfo& caps, double frequency
     return std::nullopt;
 }
 
+bool isRecoveryWindowActive(std::chrono::steady_clock::time_point until) {
+    return until != std::chrono::steady_clock::time_point{} &&
+           std::chrono::steady_clock::now() < until;
+}
+
 }  // namespace
 
 SilvusAdapter::SilvusAdapter(std::string id,
                              std::string endpoint,
-                             std::optional<std::pair<double, double>> configured_power_dbm_range)
+                             std::optional<std::pair<double, double>> configured_power_dbm_range,
+                             std::chrono::milliseconds http_timeout,
+                             std::chrono::seconds soft_boot_recovery_duration)
     : id_(std::move(id))
-    , endpoint_(std::move(endpoint)) {
+    , endpoint_(std::move(endpoint))
+    , http_timeout_(http_timeout)
+    , soft_boot_recovery_duration_(soft_boot_recovery_duration) {
     capabilities_.supported_frequencies_mhz = {2412.0, 2437.0, 2462.0};
     if (configured_power_dbm_range) {
         capabilities_.power_range_watts = {
@@ -472,7 +436,7 @@ common::CommandResult SilvusAdapter::connect() {
     };
 
     std::string error;
-    const auto responseBody = sendHttpPost(endpoint_, request.dump(), error);
+    const auto responseBody = sendHttpPost(endpoint_, request.dump(), error, http_timeout_);
     if (!responseBody) {
         return {common::CommandResultCode::Unavailable, error, std::nullopt};
     }
@@ -492,11 +456,12 @@ common::CommandResult SilvusAdapter::connect() {
     if (!freqs.empty()) {
         capabilities_.supported_frequencies_mhz = freqs;
     }
-    if (const auto enableMaxPower = readEnableMaxPower(endpoint_)) {
+    if (const auto enableMaxPower = readEnableMaxPower(endpoint_, http_timeout_)) {
         capabilities_.enable_max_power = *enableMaxPower;
         capabilities_.manual_power_control_available = !*enableMaxPower;
     }
 
+    recovering_until_ = {};
     state_.status = common::RadioStatus::Ready;
     return {common::CommandResultCode::Ok, {}, std::nullopt};
 }
@@ -504,7 +469,13 @@ common::CommandResult SilvusAdapter::connect() {
 common::CommandResult SilvusAdapter::set_power(double watts) {
     std::lock_guard<std::mutex> lock(mutex_);
 
-    if (const auto enableMaxPower = readEnableMaxPower(endpoint_)) {
+    if (isRecoveryWindowActive(recovering_until_)) {
+        state_.status = common::RadioStatus::Recovering;
+        return {common::CommandResultCode::Busy,
+                "Radio is recovering after a frequency change", std::nullopt};
+    }
+
+    if (const auto enableMaxPower = readEnableMaxPower(endpoint_, http_timeout_)) {
         capabilities_.enable_max_power = *enableMaxPower;
         capabilities_.manual_power_control_available = !*enableMaxPower;
     }
@@ -529,7 +500,7 @@ common::CommandResult SilvusAdapter::set_power(double watts) {
     };
 
     std::string error;
-    const auto responseBody = sendHttpPost(endpoint_, request.dump(), error);
+    const auto responseBody = sendHttpPost(endpoint_, request.dump(), error, http_timeout_);
     if (!responseBody) {
         return {common::CommandResultCode::Unavailable, error, std::nullopt};
     }
@@ -554,6 +525,12 @@ common::CommandResult SilvusAdapter::set_channel(int channel_index,
                                                   double frequency_mhz) {
     std::lock_guard<std::mutex> lock(mutex_);
 
+    if (isRecoveryWindowActive(recovering_until_)) {
+        state_.status = common::RadioStatus::Recovering;
+        return {common::CommandResultCode::Busy,
+                "Radio is recovering after a frequency change", std::nullopt};
+    }
+
     if (channel_index <= 0 || frequency_mhz <= 0.0) {
         return {common::CommandResultCode::InvalidRange,
                 "Invalid channel or frequency", std::nullopt};
@@ -572,7 +549,7 @@ common::CommandResult SilvusAdapter::set_channel(int channel_index,
     };
 
     std::string error;
-    const auto responseBody = sendHttpPost(endpoint_, request.dump(), error);
+    const auto responseBody = sendHttpPost(endpoint_, request.dump(), error, http_timeout_);
     if (!responseBody) {
         return {common::CommandResultCode::Unavailable, error, std::nullopt};
     }
@@ -589,12 +566,19 @@ common::CommandResult SilvusAdapter::set_channel(int channel_index,
     }
 
     state_.channel_index = findChannelIndex(capabilities_, frequency_mhz).value_or(channel_index);
-    state_.status = common::RadioStatus::Ready;
+    recovering_until_ = std::chrono::steady_clock::now() + soft_boot_recovery_duration_;
+    state_.status = common::RadioStatus::Recovering;
     return {common::CommandResultCode::Ok, {}, std::nullopt};
 }
 
 common::CommandResult SilvusAdapter::refresh_state() {
     std::lock_guard<std::mutex> lock(mutex_);
+
+    if (isRecoveryWindowActive(recovering_until_)) {
+        state_.status = common::RadioStatus::Recovering;
+        return {common::CommandResultCode::Busy,
+                "Radio is recovering after a frequency change", std::nullopt};
+    }
 
     nlohmann::json powerRequest = {
         {"jsonrpc", "2.0"},
@@ -602,7 +586,7 @@ common::CommandResult SilvusAdapter::refresh_state() {
         {"method", "power_dBm"}
     };
     std::string error;
-    const auto powerBody = sendHttpPost(endpoint_, powerRequest.dump(), error);
+    const auto powerBody = sendHttpPost(endpoint_, powerRequest.dump(), error, http_timeout_);
     if (!powerBody) {
         return {common::CommandResultCode::Unavailable, error, std::nullopt};
     }
@@ -628,7 +612,7 @@ common::CommandResult SilvusAdapter::refresh_state() {
         {"id", "2"},
         {"method", "freq"}
     };
-    const auto freqBody = sendHttpPost(endpoint_, freqRequest.dump(), error);
+    const auto freqBody = sendHttpPost(endpoint_, freqRequest.dump(), error, http_timeout_);
     if (!freqBody) {
         return {common::CommandResultCode::Unavailable, error, std::nullopt};
     }
@@ -652,11 +636,12 @@ common::CommandResult SilvusAdapter::refresh_state() {
     } else {
         state_.channel_index.reset();
     }
-    if (const auto enableMaxPower = readEnableMaxPower(endpoint_)) {
+    if (const auto enableMaxPower = readEnableMaxPower(endpoint_, http_timeout_)) {
         capabilities_.enable_max_power = *enableMaxPower;
         capabilities_.manual_power_control_available = !*enableMaxPower;
     }
 
+    recovering_until_ = {};
     state_.status = common::RadioStatus::Ready;
     return {common::CommandResultCode::Ok, {}, std::nullopt};
 }

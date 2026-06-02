@@ -1,7 +1,20 @@
 # Issue 10 — Silvus adapter blocks the REST worker; no per-radio serialization
 
-**Status:** Open.
+**Status:** Open, partially mitigated 2026-06-02.
 **Observed:** 2026-04-19, rcc C++ port architecture review.
+
+## 2026-06-02 Update
+
+The Silvus adapter now bounds each southbound HTTP call with a configurable
+deadline (`SilvusAdapter` default: 3000 ms) and gates follow-on commands while
+the radio is in the post-`freq` recovery window. This removes the previous
+unbounded socket hang and gives callers a deterministic `BUSY` result during
+known StreamCaster soft-boot recovery.
+
+This issue remains open because the adapter is still synchronous from the REST
+worker's perspective. A slow radio can still occupy the handling thread until
+the deadline expires, and there is still no async per-radio FIFO/strand owned by
+`RadioManager`/`Orchestrator`.
 
 ## Symptom
 

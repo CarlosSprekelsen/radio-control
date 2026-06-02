@@ -162,6 +162,30 @@ TEST(SilvusAdapter, SetChannelUpdatesState) {
     EXPECT_EQ(res.code, rcc::common::CommandResultCode::Ok);
     ASSERT_TRUE(adapter.state().channel_index.has_value());
     EXPECT_EQ(*adapter.state().channel_index, 3);
+    EXPECT_EQ(adapter.state().status, rcc::common::RadioStatus::Recovering);
+
+    server.stop();
+}
+
+TEST(SilvusAdapter, FrequencyChangeGatesFollowOnCommandsDuringSoftBootRecovery) {
+    const uint16_t port = rcc::test::find_free_port();
+    rcc::test::FakeRadioServer server(port);
+    server.setHandler(makeDefaultRadioHandler());
+    server.start();
+
+    rcc::adapter::SilvusAdapter adapter("radio-1", makeEndpoint(port));
+    ASSERT_EQ(adapter.connect().code, rcc::common::CommandResultCode::Ok);
+
+    const auto channelResult = adapter.set_channel(3, 2462.0);
+    ASSERT_EQ(channelResult.code, rcc::common::CommandResultCode::Ok);
+    EXPECT_EQ(adapter.state().status, rcc::common::RadioStatus::Recovering);
+
+    const auto powerResult = adapter.set_power(1.0);
+    EXPECT_EQ(powerResult.code, rcc::common::CommandResultCode::Busy);
+    EXPECT_EQ(adapter.state().status, rcc::common::RadioStatus::Recovering);
+
+    const auto refreshResult = adapter.refresh_state();
+    EXPECT_EQ(refreshResult.code, rcc::common::CommandResultCode::Busy);
 
     server.stop();
 }
