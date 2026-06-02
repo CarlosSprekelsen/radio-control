@@ -2,7 +2,7 @@
 
 ## Status
 
-Open. Deviation from design (discovery + trusted-clock).
+Fixed 2026-06-02. Deviation from design (discovery + trusted-clock).
 
 ## Owner
 
