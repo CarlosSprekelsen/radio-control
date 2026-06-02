@@ -1,5 +1,6 @@
 #include "rcc/telemetry/telemetry_hub.hpp"
 
+#include <dts/common/core/time_authority.hpp>
 #include <dts/common/core/timestamp.hpp>
 #include <dts/common/rest/rate_limiter.hpp>
 #include <dts/common/security/bearer_validator.hpp>
@@ -147,7 +148,7 @@ private:
             if (ec == asio::error::operation_aborted) return;
             if (heartbeatStopped_.load(std::memory_order_relaxed)) return;
             eventBus_.publish("heartbeat", nlohmann::json{
-                {"ts", dts::common::core::utc_now_iso8601_ms()}
+                {"ts", dts::common::core::TimeAuthority::instance().nowIso8601Ms()}
             });
             // Every kReadyReemitPeriod heartbeats, re-emit the last `ready`
             // snapshot so late-joining SSE clients always find one in the
@@ -205,9 +206,8 @@ bool TelemetryHub::awaitListening(std::chrono::milliseconds timeout) {
 }
 
 static std::string now_iso8601() {
-    using namespace std::chrono;
-    const auto now = system_clock::now();
-    const auto time = system_clock::to_time_t(now);
+    const auto now = dts::common::core::TimeAuthority::instance().now();
+    const auto time = std::chrono::system_clock::to_time_t(now);
     std::tm utc;
     gmtime_r(&time, &utc);
     char buf[32];

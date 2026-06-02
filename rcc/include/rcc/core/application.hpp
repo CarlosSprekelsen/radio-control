@@ -62,6 +62,7 @@ private:
     std::unique_ptr<command::Orchestrator> orchestrator_;
     std::unique_ptr<api::ApiGateway> apiGateway_;
     std::unique_ptr<::dts::common::discovery::DiscoveryResponder> discoveryResponder_;
+    std::unique_ptr<::dts::common::discovery::DiscoveryListener> discoveryListener_;
 
     std::string configPath_;
 };

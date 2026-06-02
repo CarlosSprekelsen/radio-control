@@ -10,6 +10,7 @@
 #include "rcc/telemetry/telemetry_hub.hpp"
 #include "rcc/version.hpp"
 
+#include "dts/common/core/time_authority.hpp"
 #include "dts/common/core/service_runner.hpp"
 #include "dts/common/discovery/discovery.hpp"
 
@@ -20,6 +21,10 @@
 #include <nlohmann/json.hpp>
 
 using ::dts::common::discovery::DiscoveryEndpointMap;
+using ::dts::common::discovery::DiscoveryAnnouncement;
+using ::dts::common::discovery::DiscoveryListener;
+using ::dts::common::discovery::DiscoveryListenerConfig;
+using ::dts::common::discovery::DiscoveryRequest;
 using ::dts::common::discovery::DiscoveryResponder;
 using ::dts::common::discovery::DiscoveryResponderConfig;
 using ::dts::common::discovery::DiscoveryServiceDescriptor;
@@ -153,9 +158,36 @@ void Application::initialize(int argc, char* argv[]) {
                          "/api/v1/health"},
       };
     };
+    disc_descriptor.requestObserver =
+        [](const DiscoveryRequest& request, const std::string& peerAddress) {
+            if (!request.time.has_value() || request.time->empty()) {
+                return;
+            }
+            dts::common::core::TimeAuthority::instance().observeDiscoveryTime(
+                *request.time, "dts.discover", peerAddress,
+                request.timeQuality);
+        };
 
     discoveryResponder_ = std::make_unique<DiscoveryResponder>(
         io, disc_config, disc_descriptor);
+
+    DiscoveryListenerConfig listener_config;
+    listener_config.enabled = cfg.service_discovery.enabled;
+    listener_config.port = cfg.service_discovery.port;
+    listener_config.bindAddress = cfg.service_discovery.bind_address;
+    listener_config.interfaceHint = cfg.service_discovery.interface_hint;
+    discoveryListener_ = std::make_unique<DiscoveryListener>(
+        io, listener_config,
+        [](const DiscoveryAnnouncement& announcement,
+           const std::string& peerAddress) {
+            if (announcement.service == "radio-service" ||
+                !announcement.time.has_value() || announcement.time->empty()) {
+                return;
+            }
+            dts::common::core::TimeAuthority::instance().observeDiscoveryTime(
+                *announcement.time, announcement.service, peerAddress,
+                announcement.timeQuality);
+        });
 }
 
 void Application::start() {
@@ -173,6 +205,13 @@ void Application::start() {
                 std::cerr << "Service discovery failed open; continuing without "
                              "discovery announcements\n";
             }
+        }
+    }
+    if (discoveryListener_) {
+        const auto& cfg = config_->current();
+        if (cfg.service_discovery.enabled && !discoveryListener_->start()) {
+            std::cerr << "Discovery listener failed open; continuing without "
+                         "peer clock observations\n";
         }
     }
 
@@ -216,6 +255,7 @@ void Application::start() {
 }
 
 void Application::stop() {
+    if (discoveryListener_) { discoveryListener_->stop(); }
     if (discoveryResponder_) { discoveryResponder_->stop(); }
     if (apiGateway_)   { apiGateway_->stop(); }
     if (radioManager_) { radioManager_->stop(); }
