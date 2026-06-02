@@ -1,4 +1,4 @@
-# [Open] radio-control: adopt TimeAuthority for outbound telemetry; verify discovery participation
+# [Fixed] radio-control: adopt TimeAuthority for outbound telemetry; verify discovery participation
 
 ## Status
 
