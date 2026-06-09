@@ -727,7 +727,7 @@ build_image() {
     mkdir -p "$rootfs"
     
     log "[$ARCH] Creating minimal rootfs via debootstrap..."
-    local INCLUDE_PKGS=(ca-certificates libssl3t64 libyaml-cpp0.8 openssh-server nginx-light avahi-daemon dbus net-tools curl vim strace iproute2 htop binutils file)
+    local INCLUDE_PKGS=(ca-certificates libssl3t64 libyaml-cpp0.8 openssh-server nginx-light avahi-daemon dbus net-tools curl vim strace iproute2 iputils-arping htop binutils file)
     if [[ "$DEBUG" == "true" ]]; then
         INCLUDE_PKGS+=(tcpdump procps)
     fi
