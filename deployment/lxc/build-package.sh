@@ -36,6 +36,25 @@ log() { echo -e "${GREEN}[BUILD]${NC} $1"; }
 warn() { echo -e "${YELLOW}[WARN]${NC} $1"; }
 error() { echo -e "${RED}[ERROR]${NC} $1"; exit 1; }
 
+install_dts_auto_ip_helper() {
+    local rootfs="$1"
+    local helper="${DTS_AUTO_IP_HELPER:-}"
+    local search_dir="$SCRIPT_DIR"
+
+    if [[ -z "$helper" ]]; then
+        while [[ "$search_dir" != "/" && -n "$search_dir" ]]; do
+            if [[ -f "$search_dir/dts-scripts/lxc/dts-auto-ip.sh" ]]; then
+                helper="$search_dir/dts-scripts/lxc/dts-auto-ip.sh"
+                break
+            fi
+            search_dir="$(dirname "$search_dir")"
+        done
+    fi
+
+    [[ -f "$helper" ]] || error "dts-auto-ip helper not found; set DTS_AUTO_IP_HELPER=/path/to/dts-auto-ip.sh"
+    install -D -m 0755 "$helper" "$rootfs/usr/local/sbin/dts-auto-ip"
+}
+
 # Inject /usr/sbin/policy-rc.d (exit 101) into a debootstrap tarball so that
 # `debootstrap --unpack-tarball`'s second stage runs `dpkg --configure -a`
 # with service starts disabled. Idempotent.
@@ -940,6 +959,8 @@ EOF
 </service-group>
 AVAHIEOF
 
+    install_dts_auto_ip_helper "$rootfs"
+
     # Create /etc/rc.local init script (replaces systemd service)
     log "[$ARCH] Creating /etc/rc.local init script..."
     tee "$rootfs/etc/rc.local" >/dev/null <<'EOF'
@@ -963,6 +984,14 @@ export CONTAINER_GATEWAY
 # Bring up network
 if command -v ifup >/dev/null 2>&1; then
     ifup eth0 2>/dev/null || true
+fi
+
+if [ -f /usr/local/sbin/dts-auto-ip ]; then
+    DTS_CONTAINER_LAST_OCTET=35
+    DTS_NET_LOG=/var/log/rcc/rcc.log
+    DTS_NET_TIMEOUT=30
+    . /usr/local/sbin/dts-auto-ip
+    dts_configure_static_network || true
 fi
 
 # Update library cache
