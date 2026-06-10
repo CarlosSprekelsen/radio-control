@@ -194,8 +194,8 @@ TEST(TelemetrySSE, PublishEventReachesClient) {
     // Publish an event
     hub.publishPowerChanged("radio-1", 1.5);
 
-    // Per SSE v1 contract, power updates are published as `event: powerChanged`.
-    const bool found = readSseEvent(fd, "event: powerChanged");
+    // Per SSE v1 contract, power updates are published as `event:powerChanged`.
+    const bool found = readSseEvent(fd, "event:powerChanged");
     EXPECT_TRUE(found) << "Did not receive powerChanged event within timeout";
 
     ::close(fd);
@@ -221,7 +221,7 @@ TEST(TelemetrySSE, HeartbeatEventReachesClient) {
     const int fd = connectSseClient(port);
     ASSERT_GE(fd, 0);
 
-    EXPECT_TRUE(readSseEvent(fd, "event: heartbeat", std::chrono::milliseconds{2500}))
+    EXPECT_TRUE(readSseEvent(fd, "event:heartbeat", std::chrono::milliseconds{2500}))
         << "Did not receive heartbeat event within timeout";
 
     ::close(fd);
@@ -250,7 +250,7 @@ TEST(TelemetrySSE, FaultEventCarriesCodeAndRetryDetails) {
     hub.publishFault("radio-1", "BUSY", "retry later", 1500);
 
     std::string payload;
-    ASSERT_TRUE(readSsePayload(fd, "event: fault", payload))
+    ASSERT_TRUE(readSsePayload(fd, "event:fault", payload))
         << "Did not receive fault event within timeout";
     EXPECT_NE(payload.find("\"code\":\"BUSY\""), std::string::npos);
     EXPECT_NE(payload.find("\"retryMs\":1500"), std::string::npos);
@@ -281,7 +281,7 @@ TEST(TelemetrySSE, StateEventNormalizesOnlineStatus) {
     hub.publishRadioState("radio-1", "ready", -1, 0.0, 2412.0);
 
     std::string payload;
-    ASSERT_TRUE(readSsePayload(fd, "event: state", payload))
+    ASSERT_TRUE(readSsePayload(fd, "event:state", payload))
         << "Did not receive state event within timeout";
     EXPECT_NE(payload.find("\"status\":\"online\""), std::string::npos);
     EXPECT_NE(payload.find("\"powerDbm\":null"), std::string::npos);
