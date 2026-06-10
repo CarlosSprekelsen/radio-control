@@ -175,7 +175,6 @@ void Application::initialize(int argc, char* argv[]) {
     listener_config.enabled = cfg.service_discovery.enabled;
     listener_config.port = cfg.service_discovery.port;
     listener_config.bindAddress = cfg.service_discovery.bind_address;
-    listener_config.interfaceHint = cfg.service_discovery.interface_hint;
     discoveryListener_ = std::make_unique<DiscoveryListener>(
         io, listener_config,
         [](const DiscoveryAnnouncement& announcement,
